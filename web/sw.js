@@ -1,7 +1,7 @@
 // Service worker: запоминает файлы интерфейса, чтобы сайт открывался быстро и работал как приложение.
 // Запросы к /api/ всегда идут на сервер — анализ без интернета невозможен.
-const CACHE = "formcoach-v2";
-const SHELL = ["/", "/style.css", "/i18n.js", "/app.js", "/manifest.webmanifest", "/icons/icon-192.png"];
+const CACHE = "formcoach-v3";
+const SHELL = ["/", "/style.css", "/i18n.js", "/app.js", "/live.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));

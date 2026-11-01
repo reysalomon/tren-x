@@ -97,6 +97,24 @@ class GaussianHMM:
             alpha = logsumexp(alpha[:, None] + log_a, axis=0) + log_e[t]
         return float(logsumexp(alpha, axis=0))
 
+    def filter_step(self, log_alpha: np.ndarray | None, x: np.ndarray) -> tuple[np.ndarray, float]:
+        """Один шаг прямого алгоритма для живой камеры (фильтрация).
+
+        Витерби смотрит на всё видео сразу, а с камеры кадры приходят по одному и будущего мы не знаем.
+        Поэтому считаем P(фаза сейчас | все кадры до этого момента):
+            alpha_t(j) = logsumexp_i[alpha_{t-1}(i) + log a_ij] + log b_j(x_t)
+        и нормируем, чтобы сумма вероятностей была 1 (числа не уходят в -бесконечность).
+        log_alpha=None — первый кадр. Возвращает (новый log_alpha, log P(x_t | прошлые кадры)).
+        """
+        log_e = self.log_emission(np.asarray(x, dtype=float)[None, :])[0]
+        with np.errstate(divide="ignore"):
+            if log_alpha is None:
+                alpha = np.log(self.start) + log_e
+            else:
+                alpha = logsumexp(log_alpha[:, None] + np.log(self.trans), axis=0) + log_e
+        norm = float(logsumexp(alpha, axis=0))
+        return alpha - norm, norm
+
 
 def squat_hmm(
     top_angle: float = 165.0,

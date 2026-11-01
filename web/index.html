@@ -37,16 +37,23 @@
     </section>
 
     <section class="actions">
-      <label class="btn btn-primary btn-xl">
-        <input id="input-camera" type="file" accept="video/*" capture="environment" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h8A2.5 2.5 0 0 1 16 7.5v1.2l3.6-2.1A1 1 0 0 1 21 7.5v9a1 1 0 0 1-1.4.9L16 15.3v1.2a2.5 2.5 0 0 1-2.5 2.5h-8A2.5 2.5 0 0 1 3 16.5z"/></svg>
-        <span data-i18n="btn_camera"></span>
-      </label>
-      <label class="btn btn-secondary">
-        <input id="input-gallery" type="file" accept="video/*" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 12.5V18h14v-2.2l-4-4.3-3.2 3.4-2.3-2.4zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>
-        <span data-i18n="btn_gallery"></span>
-      </label>
+      <button class="btn btn-primary btn-live" id="btn-live">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="btn-live-text"><b data-i18n="live_btn"></b><small data-i18n="live_sub"></small></span>
+      </button>
+      <p class="or" data-i18n="or_upload"></p>
+      <div class="actions-row">
+        <label class="btn btn-secondary">
+          <input id="input-camera" type="file" accept="video/*" capture="environment" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h8A2.5 2.5 0 0 1 16 7.5v1.2l3.6-2.1A1 1 0 0 1 21 7.5v9a1 1 0 0 1-1.4.9L16 15.3v1.2a2.5 2.5 0 0 1-2.5 2.5h-8A2.5 2.5 0 0 1 3 16.5z"/></svg>
+          <span data-i18n="btn_camera"></span>
+        </label>
+        <label class="btn btn-secondary">
+          <input id="input-gallery" type="file" accept="video/*" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 12.5V18h14v-2.2l-4-4.3-3.2 3.4-2.3-2.4zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>
+          <span data-i18n="btn_gallery"></span>
+        </label>
+      </div>
     </section>
 
     <section class="card">
@@ -206,6 +213,35 @@
     <p class="footnote"><span data-i18n="footer"></span> · <a href="https://github.com/reysalomon/formcoach-ai">GitHub</a></p>
   </main>
 
+  <!-- ============ Живая камера ============ -->
+  <main id="screen-live" class="live" hidden>
+    <video id="live-video" playsinline muted autoplay></video>
+    <canvas id="live-canvas"></canvas>
+    <div class="live-top">
+      <button class="live-icon" id="live-close" data-i18n-aria="live_close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z"/></svg>
+      </button>
+      <div class="live-count" aria-live="polite">
+        <span id="live-reps">0</span>
+        <small><span data-i18n="live_reps"></span> · <b id="live-good">0</b> <span data-i18n="live_good"></span></small>
+      </div>
+      <div class="live-side">
+        <button class="live-icon" id="live-sound" data-i18n-aria="live_sound" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+        </button>
+        <button class="live-icon" id="live-flip" data-i18n-aria="live_flip">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4zm3 4.5a4.5 4.5 0 0 1 4.4 3.5H18l-2.5 3-2.5-3h1.3A2.5 2.5 0 0 0 12 10.5a2.5 2.5 0 0 0-1.8.8L8.8 9.9A4.5 4.5 0 0 1 12 8.5zm-4.5 3 2.5 3H8.7a2.5 2.5 0 0 0 5.1.7l1.4 1.4a4.5 4.5 0 0 1-8.4-2.1H5z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="live-phase" id="live-phase" hidden></div>
+    <div class="live-status" id="live-status" role="status" aria-live="polite"></div>
+    <div class="live-hint" id="live-hint" aria-live="assertive" hidden></div>
+    <div class="live-bottom">
+      <button class="btn btn-primary live-finish" id="live-finish" data-i18n="live_finish" disabled></button>
+    </div>
+  </main>
+
   <!-- ============ Загрузка ============ -->
   <div id="loading" class="overlay" hidden>
     <div class="loader-card" role="status" aria-live="polite">
@@ -233,5 +269,6 @@
 
   <script src="i18n.js"></script>
   <script src="app.js"></script>
+  <script src="live.js"></script>
 </body>
 </html>

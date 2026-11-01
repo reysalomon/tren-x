@@ -13,7 +13,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -22,6 +22,7 @@ from formcoach.agent import ERROR_TEXT, SquatRules
 from formcoach.classifier import CLASS_RU, DATA as ML_DATA, FormClassifier
 from formcoach.features import squat_features
 from formcoach.hmm import STATE_NAMES, squat_hmm
+from formcoach.live import LiveSession
 from formcoach.pipeline import Analysis, analyze_squat
 from formcoach.pose import draw_skeleton, extract_pose, read_frame
 
@@ -170,9 +171,17 @@ def crop_to_body(img: np.ndarray, points: np.ndarray, aspect: float = 4 / 3, mar
     return img[top:top + int(bh), left:left + int(bw)]
 
 
-def thumbnail(video_path: Path, landmarks: np.ndarray, frame: int, width: int = 360) -> str | None:
-    """Кадр нижней точки со скелетом -> маленькая JPEG-картинка в base64 (для <img src=...>)."""
-    rgb = read_frame(video_path, frame)
+def thumbnail(video_path: Path | None, landmarks: np.ndarray, frame: int, width: int = 360) -> str | None:
+    """Кадр нижней точки со скелетом -> маленькая JPEG-картинка в base64 (для <img src=...>).
+    video_path=None (живая камера: видео не присылали) — рисуем только скелет на тёмном фоне."""
+    if video_path is None:
+        pts = landmarks[frame]
+        if np.isnan(pts[0, 0]):
+            return None
+        h, w = int(np.nanmax(pts[:, 1])) + 40, int(np.nanmax(pts[:, 0])) + 40
+        rgb = np.full((max(h, 10), max(w, 10), 3), (22, 25, 30), np.uint8)
+    else:
+        rgb = read_frame(video_path, frame)
     if rgb is None:
         return None
     img = draw_skeleton(rgb, landmarks[frame], color=(198, 255, 61))
@@ -205,7 +214,7 @@ def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landm
                 "label": v.label, "label_text": both(lambda T: T["classes"][v.label]), "no_feet": v.no_feet,
                 "probs": {k: clean(p) for k, p in v.probs.items()},
             },
-            "image": thumbnail(video_path, landmarks, r.bottom_frame) if video_path is not None else None,
+            "image": thumbnail(video_path, landmarks, r.bottom_frame) if landmarks is not None else None,
         })
     # для графика достаточно ~300 точек, иначе ответ получается тяжёлым
     step = max(1, len(a.phases) // 300)
@@ -226,7 +235,7 @@ def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landm
         "hmm": {"trans": np.round(squat_hmm(**hmm_params).trans, 3).tolist(),
                 "log_likelihood": round(a.log_likelihood, 1),
                 "per_frame": round(a.log_likelihood / len(a.phases), 2)},
-        "has_ml": video_path is not None and load_classifier() is not None,
+        "has_ml": any(v is not None for v in a.ml),
     }
 
 
@@ -298,6 +307,90 @@ def info():
         rr = json.loads(retrain_report.read_text())
         out["retrain"] = {"videos": rr["videos"], "reps": rr["reps"]}
     return out
+
+
+# ---------------- живая камера ----------------
+# Телефон сам находит позу (MediaPipe в браузере) и присылает по WebSocket только 33 точки тела на кадр.
+# Сервер прогоняет их через LiveSession (признаки -> HMM-фильтрация -> агент) и сразу отвечает подсказками.
+# Протокол (JSON):
+#   телефон -> {"type": "start", "settings": {...}, "lang": "kk"}      сервер -> {"type": "ready"}
+#   телефон -> {"type": "frame", "t": секунды, "lm": [132 числа] | null} сервер -> {"type": "state", ...}
+#   телефон -> {"type": "stop"}                                         сервер -> {"type": "result", "data": {...}}
+MAX_LIVE_FRAMES = 30 * 60 * 10  # не больше 10 минут при 30 кадр/с — защита памяти сервера
+LIVE_ERRORS = {
+    "ru": {"protocol": "Ошибка связи с камерой. Обнови страницу.", "short": "Слишком короткий подход — сделай хотя бы одно повторение.",
+           "long": "Подход слишком длинный (больше 10 минут). Начни новый."},
+    "kk": {"protocol": "Камерамен байланыс қатесі. Бетті жаңарт.", "short": "Тым қысқа — кем дегенде бір қайталау жаса.",
+           "long": "Тым ұзақ (10 минуттан көп). Жаңасын баста."},
+}
+
+
+def live_event(f, session: LiveSession) -> dict:
+    """Подсказка агента для телефона: код (по нему играется голосовая фраза) + текст на двух языках."""
+    reps = {r.number: r for r in session.agent.reps}
+    event = {"code": f.code, "level": f.level, "rep": f.rep, "message": feedback_text(f, reps)}
+    if f.code == "rep" and f.rep in reps:
+        event["good"] = reps[f.rep].good
+        event["errors"] = reps[f.rep].errors
+    return event
+
+
+def parse_frame(msg: dict):
+    """Проверяем кадр от телефона: время — число, точки — 33 x 4 конечных числа или null."""
+    t = msg.get("t")
+    lm = msg.get("lm")
+    if isinstance(t, bool) or not isinstance(t, (int, float)) or not np.isfinite(t):
+        raise ValueError("bad time")
+    if lm is None:
+        return float(t), None
+    pts = np.asarray(lm, dtype=float)
+    if pts.size != 33 * 4 or not np.all(np.isfinite(pts)):
+        raise ValueError("bad landmarks")
+    return float(t), pts.reshape(33, 4)
+
+
+@app.websocket("/ws/live")
+async def live(ws: WebSocket):
+    await ws.accept()
+    lang, session, hmm_params = "ru", None, None
+    try:
+        while True:
+            try:
+                msg = await ws.receive_json()
+            except ValueError:  # прислали не JSON
+                await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["protocol"]})
+                continue
+            kind = msg.get("type") if isinstance(msg, dict) else None
+            try:
+                if kind == "start":
+                    lang = check_lang(msg.get("lang"))
+                    hmm_params, rules = parse_settings(json.dumps(msg.get("settings") or {}), lang)
+                    session = LiveSession(hmm_params, rules)
+                    await ws.send_json({"type": "ready"})
+                elif kind == "frame" and session is not None:
+                    if len(session.times) >= MAX_LIVE_FRAMES:
+                        await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["long"]})
+                        continue
+                    t, pts = parse_frame(msg)
+                    out = session.push(t, pts)
+                    out["events"] = [live_event(f, session) for f in out["events"]]
+                    await ws.send_json({"type": "state", **out})
+                elif kind == "stop" and session is not None:
+                    try:
+                        a = session.summary(load_classifier())
+                    except ValueError:
+                        await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["short"]})
+                    else:
+                        await ws.send_json({"type": "result", "data": to_json(a, hmm_params, None, np.array(session.landmarks))})
+                    session = None
+                else:
+                    raise ValueError("unknown message")
+            except HTTPException as e:  # неверные настройки
+                await ws.send_json({"type": "error", "detail": e.detail})
+            except (ValueError, TypeError):
+                await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["protocol"]})
+    except WebSocketDisconnect:
+        pass  # телефон закрыл страницу — ничего не храним
 
 
 # Service worker должен отдаваться из корня сайта, иначе браузер не даст ему управлять всеми страницами

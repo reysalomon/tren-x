@@ -257,3 +257,62 @@ input[type="range"] { width: 100%; margin: 12px 0 2px; accent-color: var(--accen
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- главная: кнопка живой камеры ---------- */
+.btn-live { min-height: 76px; justify-content: flex-start; gap: 16px; padding: 0 22px; text-align: left; }
+.btn-live-text { display: grid; gap: 2px; }
+.btn-live-text b { font-size: 19px; }
+.btn-live-text small { font-weight: 600; font-size: 13px; opacity: .75; }
+.live-dot { width: 14px; height: 14px; flex: none; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 0 0 rgba(255, 59, 59, .6); animation: rec 1.6s infinite; }
+@keyframes rec { 70% { box-shadow: 0 0 0 10px rgba(255, 59, 59, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 59, 59, 0); } }
+.or { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 13px; }
+.actions-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions-row .btn { font-size: 15px; padding: 0 12px; }
+
+/* ---------- экран живой камеры (на весь экран, поверх всего) ---------- */
+body.live-on { overflow: hidden; }
+body.live-on .tabbar { display: none; }
+.live { position: fixed; inset: 0; z-index: 50; background: #000; color: #fff; overflow: hidden; }
+.live video, .live canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.live .mirror { transform: scaleX(-1); }
+.live-top {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 2;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 24px;
+  background: linear-gradient(rgba(0, 0, 0, .6), transparent);
+}
+.live-side { display: grid; gap: 10px; }
+.live-icon { width: 46px; height: 46px; border-radius: 14px; border: 0; background: rgba(20, 22, 26, .65); color: #fff; display: grid; place-items: center; cursor: pointer; backdrop-filter: blur(8px); }
+.live-icon svg { width: 24px; height: 24px; }
+.live-icon.off { color: var(--muted); }
+.live-icon.off svg { opacity: .45; }
+.live-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.live-count { text-align: center; text-shadow: 0 2px 12px rgba(0, 0, 0, .6); }
+.live-count > span { display: block; font-family: var(--display); font-weight: 800; font-size: 64px; line-height: 1; }
+.live-count small { font-size: 14px; color: #e7e9ec; }
+.live-count b { color: var(--accent); }
+.live-phase {
+  position: absolute; z-index: 2; left: 50%; top: calc(150px + env(safe-area-inset-top)); transform: translateX(-50%);
+  padding: 6px 16px; border-radius: 999px; font-weight: 800; font-size: 14px; letter-spacing: .06em;
+  background: rgba(20, 22, 26, .7); border: 2px solid #2a78d6;
+}
+.live-phase[data-phase="1"] { border-color: #eb6834; }
+.live-phase[data-phase="2"] { border-color: #1baf7a; }
+.live-phase[data-phase="3"] { border-color: #eda100; }
+.live-status {
+  position: absolute; z-index: 2; left: 16px; right: 16px; top: 50%; transform: translateY(-50%);
+  text-align: center; font-weight: 700; font-size: 20px; line-height: 1.35;
+  padding: 18px; border-radius: 18px; background: rgba(13, 15, 18, .72); backdrop-filter: blur(6px);
+}
+.live-hint {
+  position: absolute; z-index: 3; left: 16px; right: 16px; bottom: calc(110px + env(safe-area-inset-bottom));
+  padding: 16px 18px; border-radius: 18px; font-weight: 800; font-size: 22px; line-height: 1.25; text-align: center;
+  background: rgba(13, 15, 18, .82); border-left: 6px solid var(--warn); animation: pop .25s ease;
+}
+.live-hint.ok { border-left-color: var(--accent); color: var(--accent); }
+.live-hint.danger { border-left-color: var(--danger); background: rgba(80, 10, 14, .88); }
+@keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
+.live-bottom { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom)); }
+.live-finish { width: 100%; min-height: 60px; font-size: 18px; }
+.live-finish:disabled { opacity: .5; }
+@media (prefers-reduced-motion: reduce) { .live-dot, .live-hint { animation: none; } }
