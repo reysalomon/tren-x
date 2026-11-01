@@ -33,6 +33,90 @@ VIDEO_TYPES = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".m4v"}
 DEMO_SPECS = {"shallow": syn.SHALLOW, "lean": syn.LEANING, "heels": syn.HEELS_UP, "fast": syn.TOO_FAST}
 ERROR_SHORT = {"shallow": "неглубоко", "lean": "наклон", "heels": "пятки", "fast": "быстро"}
 
+# ---------------- два языка: русский и казахский ----------------
+# Вся AI-логика (formcoach/) пишет тексты по-русски. Сайт показывает их на выбранном языке,
+# поэтому в ответе каждый текст лежит сразу в двух вариантах: {"ru": ..., "kk": ...}.
+# Тогда переключение языка на телефоне не требует повторного анализа видео.
+LANGS = ("ru", "kk")
+TEXT = {
+    "ru": {
+        "short": ERROR_SHORT,
+        "error": ERROR_TEXT,
+        "phases": STATE_NAMES,
+        "classes": CLASS_RU,
+        "live": {"danger": "Опасный наклон! Высокая нагрузка на поясницу", "lean": "Держи спину ровнее",
+                 "heels": "Пятки на пол", "walking": "Похоже на ходьбу, не засчитываю"},
+        "rep_ok": "Повторение {n}: отлично!",
+        "rep_bad": "Повторение {n}: {text}",
+    },
+    "kk": {
+        "short": {"shallow": "таяз", "lean": "еңкею", "heels": "өкше", "fast": "жылдам"},
+        "error": {
+            "shallow": "Таяз отырыс — төменірек түс (санды еденге параллельге жақындат)",
+            "lean": "Дене алға қатты еңкейді — кеудеңді жоғары ұста",
+            "heels": "Өкше еденнен көтеріледі — салмақты бүкіл табанға сал",
+            "fast": "Тым жылдам — бақылап, баяу түс",
+        },
+        "phases": ["ЖОҒАРЫ", "ТҮСУ", "ТӨМЕН", "КӨТЕРІЛУ"],
+        "classes": {"good": "дұрыс", "bad_back": "арқа", "bad_heel": "өкше"},
+        "live": {"danger": "Қауіпті еңкею! Белге түсетін жүктеме жоғары", "lean": "Арқаңды түзу ұста",
+                 "heels": "Өкшені еденге қой", "walking": "Жүріске ұқсайды, есептемеймін"},
+        "rep_ok": "{n}-қайталау: керемет!",
+        "rep_bad": "{n}-қайталау: {text}",
+    },
+}
+# Сообщения об ошибках сервера — на языке, который прислал телефон
+ERRORS = {
+    "ru": {
+        "bad_settings": "Настройки переданы в неверном формате.",
+        "bad_param": "Параметр «{key}» должен быть числом от {lo} до {hi}.",
+        "not_video": "Это не видеофайл. Подходят mp4, mov, webm, avi, mkv, 3gp.",
+        "empty": "Файл пустой.",
+        "too_big": "Видео больше {mb} МБ. Сними покороче (20–60 секунд хватает).",
+        "too_long": "Видео длиннее {sec} секунд. Обрежь его или сними 5–10 повторений.",
+        "no_person": "Человек найден только на {ratio:.0%} кадров. Сними так, чтобы всё тело было в кадре.",
+        "failed": "Не получилось обработать видео: {e}",
+        "unknown_errors": "Неизвестные ошибки: {names}",
+    },
+    "kk": {
+        "bad_settings": "Баптаулар қате форматта жіберілді.",
+        "bad_param": "«{key}» параметрі {lo} мен {hi} аралығындағы сан болуы керек.",
+        "not_video": "Бұл видеофайл емес. mp4, mov, webm, avi, mkv, 3gp файлдары жарайды.",
+        "empty": "Файл бос.",
+        "too_big": "Видео {mb} МБ-тан үлкен. Қысқарақ түсір (20–60 секунд жеткілікті).",
+        "too_long": "Видео {sec} секундтан ұзын. Оны қысқарт немесе 5–10 қайталау түсір.",
+        "no_person": "Адам кадрлардың тек {ratio:.0%} бөлігінде табылды. Бүкіл дене кадрға сиятындай түсір.",
+        "failed": "Видеоны өңдеу мүмкін болмады: {e}",
+        "unknown_errors": "Белгісіз қателер: {names}",
+    },
+}
+
+
+def check_lang(lang: str | None) -> str:
+    return lang if lang in LANGS else "ru"
+
+
+def fail(status: int, lang: str, msg: str, **kw) -> HTTPException:
+    """Ошибка для телефона: текст msg из ERRORS на нужном языке, kw подставляются в {..}."""
+    return HTTPException(status, ERRORS[lang][msg].format(**kw))
+
+
+def both(make) -> dict:
+    """make(тексты_языка) -> строка; возвращает {"ru": ..., "kk": ...}."""
+    return {lang: make(TEXT[lang]) for lang in LANGS}
+
+
+def feedback_text(f, reps_by_number: dict) -> dict:
+    """Подсказка агента на двух языках: собираем её заново по коду (агент хранит только русский текст)."""
+    if f.code in TEXT["ru"]["live"]:
+        return both(lambda T: T["live"][f.code])
+    if f.code == "rep" and f.rep in reps_by_number:
+        r = reps_by_number[f.rep]
+        if r.good:
+            return both(lambda T: T["rep_ok"].format(n=r.number))
+        return both(lambda T: T["rep_bad"].format(n=r.number, text="; ".join(T["error"][e] for e in r.errors)))
+    return {lang: f.message for lang in LANGS}
+
 app = FastAPI(title="FormCoach AI")
 
 
@@ -41,20 +125,20 @@ def load_classifier() -> FormClassifier | None:
     return FormClassifier.load()
 
 
-def parse_settings(raw: str | None) -> tuple[dict, SquatRules]:
+def parse_settings(raw: str | None, lang: str = "ru") -> tuple[dict, SquatRules]:
     """Настройки из интерфейса (JSON-строка) -> параметры HMM и правила агента.
     Неизвестные ключи игнорируем, значения проверяем по тем же границам, что и ползунки."""
     try:
         s = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
-        raise HTTPException(400, "Настройки переданы в неверном формате.")
+        raise fail(400, lang, "bad_settings")
     if not isinstance(s, dict):
-        raise HTTPException(400, "Настройки переданы в неверном формате.")
+        raise fail(400, lang, "bad_settings")
 
     def num(key, default, lo, hi):
         v = s.get(key, default)
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
-            raise HTTPException(400, f"Параметр «{key}» должен быть числом от {lo} до {hi}.")
+            raise fail(400, lang, "bad_param", key=key, lo=lo, hi=hi)
         return float(v)
 
     hmm = dict(top_angle=num("top_angle", 165, 140, 180), bottom_angle=num("bottom_angle", 85, 50, 130),
@@ -113,11 +197,12 @@ def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landm
             "number": r.number,
             "start_s": round(r.start / a.fps, 2), "end_s": round(r.end / a.fps, 2),
             "good": r.good,
-            "errors": [{"key": e, "short": ERROR_SHORT[e], "text": ERROR_TEXT[e]} for e in r.errors],
+            "errors": [{"key": e, "short": both(lambda T: T["short"][e]), "text": both(lambda T: T["error"][e])}
+                       for e in r.errors],
             "min_knee": clean(r.min_knee), "min_thigh": clean(r.min_thigh), "max_lean": clean(r.max_lean),
             "max_heel": clean(r.max_heel), "seconds": clean(r.seconds),
             "ml": None if v is None else {
-                "label": v.label, "label_ru": CLASS_RU[v.label], "no_feet": v.no_feet,
+                "label": v.label, "label_text": both(lambda T: T["classes"][v.label]), "no_feet": v.no_feet,
                 "probs": {k: clean(p) for k, p in v.probs.items()},
             },
             "image": thumbnail(video_path, landmarks, r.bottom_frame) if video_path is not None else None,
@@ -125,18 +210,19 @@ def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landm
     # для графика достаточно ~300 точек, иначе ответ получается тяжёлым
     step = max(1, len(a.phases) // 300)
     good = sum(r.good for r in a.reps)
+    by_number = {r.number: r for r in a.reps}
     return {
         "summary": {"reps": len(a.reps), "good": good, "bad": len(a.reps) - good,
                     "seconds": round(len(a.phases) / a.fps, 1)},
         "reps": reps,
-        "feedback": [{"t": round(f.frame / a.fps, 1), "level": f.level, "message": f.message} for f in a.feedback],
+        "feedback": [{"t": round(f.frame / a.fps, 1), "level": f.level, "message": feedback_text(f, by_number)} for f in a.feedback],
         "series": {
             "t": [round(i / a.fps, 2) for i in range(0, len(a.phases), step)],
             "knee": [clean(x) for x in a.features["knee_angle"][::step]],
             "phase": [int(p) for p in a.phases[::step]],
             "bottoms": [{"t": round(r.bottom_frame / a.fps, 2), "knee": clean(r.min_knee), "n": r.number} for r in a.reps],
         },
-        "phase_names": STATE_NAMES,
+        "phase_names": both(lambda T: T["phases"]),
         "hmm": {"trans": np.round(squat_hmm(**hmm_params).trans, 3).tolist(),
                 "log_likelihood": round(a.log_likelihood, 1),
                 "per_frame": round(a.log_likelihood / len(a.phases), 2)},
@@ -145,16 +231,17 @@ def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landm
 
 
 @app.post("/api/analyze")
-async def analyze_video(video: UploadFile = File(...), settings: str | None = Form(None)):
-    hmm_params, rules = parse_settings(settings)
+async def analyze_video(video: UploadFile = File(...), settings: str | None = Form(None), lang: str = Form("ru")):
+    lang = check_lang(lang)
+    hmm_params, rules = parse_settings(settings, lang)
     suffix = Path(video.filename or "").suffix.lower()
     if suffix not in VIDEO_TYPES:
-        raise HTTPException(400, "Это не видеофайл. Подходят mp4, mov, webm, avi, mkv, 3gp.")
+        raise fail(400, lang, "not_video")
     data = await video.read()
     if not data:
-        raise HTTPException(400, "Файл пустой.")
+        raise fail(400, lang, "empty")
     if len(data) > MAX_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(413, f"Видео больше {MAX_UPLOAD_MB} МБ. Сними покороче (20–60 секунд хватает).")
+        raise fail(413, lang, "too_big", mb=MAX_UPLOAD_MB)
 
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / f"upload{suffix}"
@@ -163,27 +250,27 @@ async def analyze_video(video: UploadFile = File(...), settings: str | None = Fo
         fps, n = cap.get(cv2.CAP_PROP_FPS) or 30.0, cap.get(cv2.CAP_PROP_FRAME_COUNT)
         cap.release()
         if n > 0 and n / fps > MAX_SECONDS:
-            raise HTTPException(400, f"Видео длиннее {MAX_SECONDS} секунд. Обрежь его или сними 5–10 повторений.")
+            raise fail(400, lang, "too_long", sec=MAX_SECONDS)
         try:
             seq = extract_pose(path)
             if seq.detected_ratio < 0.5:
-                raise HTTPException(422, f"Человек найден только на {seq.detected_ratio:.0%} кадров. "
-                                         "Сними так, чтобы всё тело было в кадре.")
+                raise fail(422, lang, "no_person", ratio=seq.detected_ratio)
             a = analyze_squat(squat_features(seq), seq.fps, hmm_params, rules,
                               landmarks=seq.landmarks, classifier=load_classifier())
         except (ValueError, FileNotFoundError) as e:
-            raise HTTPException(422, f"Не получилось обработать видео: {e}")
+            raise fail(422, lang, "failed", e=e)
         return to_json(a, hmm_params, path, seq.landmarks)
 
 
 @app.get("/api/demo")
-def demo(errors: str = "shallow,lean", settings: str | None = None):
+def demo(errors: str = "shallow,lean", settings: str | None = None, lang: str = "ru"):
     """Демо без видео: синтетический спортсмен делает выбранные ошибки (между ними — правильные повторения)."""
-    hmm_params, rules = parse_settings(settings)
+    lang = check_lang(lang)
+    hmm_params, rules = parse_settings(settings, lang)
     chosen = [e for e in errors.split(",") if e]
     unknown = [e for e in chosen if e not in DEMO_SPECS]
     if unknown:
-        raise HTTPException(400, f"Неизвестные ошибки: {', '.join(unknown)}")
+        raise fail(400, lang, "unknown_errors", names=", ".join(unknown))
     plan = [syn.GOOD]
     for e in chosen:
         plan += [DEMO_SPECS[e], syn.GOOD]

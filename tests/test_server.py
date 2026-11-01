@@ -88,3 +88,26 @@ def test_upload_full_pipeline_on_real_landmarks(monkeypatch):
     assert all(rep["image"].startswith("data:image/jpeg;base64,") for rep in data["reps"])
     if data["has_ml"]:
         assert all(rep["ml"]["label"] in ("good", "bad_back", "bad_heel") for rep in data["reps"])
+
+
+def test_demo_texts_in_both_languages():
+    """Каждый текст для пользователя приходит сразу на русском и казахском — сайт переключает язык без нового анализа."""
+    r = client.get("/api/demo", params={"errors": "shallow,lean"}).json()
+    err = r["reps"][1]["errors"][0]
+    assert err["short"] == {"ru": "неглубоко", "kk": "таяз"}
+    assert err["text"]["kk"].startswith("Таяз отырыс")
+    assert r["phase_names"]["kk"] == ["ЖОҒАРЫ", "ТҮСУ", "ТӨМЕН", "КӨТЕРІЛУ"]
+    messages = [f["message"] for f in r["feedback"]]
+    assert all(set(m) == {"ru", "kk"} and m["kk"] for m in messages)
+    assert "1-қайталау: керемет!" in [m["kk"] for m in messages]
+    assert "Повторение 1: отлично!" in [m["ru"] for m in messages]
+
+
+def test_errors_in_kazakh_when_asked():
+    r = client.get("/api/demo", params={"errors": "jump", "lang": "kk"})
+    assert r.status_code == 400 and r.json()["detail"].startswith("Белгісіз қателер")
+    r = client.post("/api/analyze", files={"video": ("notes.txt", b"hello", "text/plain")}, data={"lang": "kk"})
+    assert r.status_code == 400 and "видеофайл емес" in r.json()["detail"]
+    # неизвестный язык -> русский
+    r = client.get("/api/demo", params={"settings": "[1]", "lang": "de"})
+    assert r.json()["detail"] == "Настройки переданы в неверном формате."

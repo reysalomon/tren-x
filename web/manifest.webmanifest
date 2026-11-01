@@ -1,8 +1,8 @@
 {
-  "name": "FormCoach AI — техника приседаний",
+  "name": "FormCoach AI — отырып-тұру техникасы",
   "short_name": "FormCoach",
-  "description": "Проверка техники приседаний по видео с телефона",
-  "lang": "ru",
+  "description": "Отырып-тұру техникасын телефон видеосы арқылы тексеру",
+  "lang": "kk",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

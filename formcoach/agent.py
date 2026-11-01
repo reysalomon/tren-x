@@ -66,6 +66,7 @@ class Feedback:
     level: str  # "ok" | "warn" | "danger" | "info"
     message: str
     rep: int | None = None
+    code: str = ""  # вид подсказки (danger/lean/heels/walking/rep) — по нему сайт переводит текст на казахский
 
 
 @dataclass
@@ -139,13 +140,13 @@ class SquatCoachAgent:
         # Мгновенные подсказки прямо во время движения
         if p.torso_lean > r.max_torso_lean + r.danger_extra_lean and "danger" not in self._warned:
             self._warned |= {"danger", "lean"}
-            actions.append(Feedback(p.frame, "danger", "Опасный наклон! Высокая нагрузка на поясницу", len(self.reps) + 1))
+            actions.append(Feedback(p.frame, "danger", "Опасный наклон! Высокая нагрузка на поясницу", len(self.reps) + 1, "danger"))
         elif p.torso_lean > r.max_torso_lean and "lean" not in self._warned:
             self._warned.add("lean")
-            actions.append(Feedback(p.frame, "warn", "Держи спину ровнее", len(self.reps) + 1))
+            actions.append(Feedback(p.frame, "warn", "Держи спину ровнее", len(self.reps) + 1, "lean"))
         if p.heel_lift > r.max_heel_lift and "heels" not in self._warned:
             self._warned.add("heels")
-            actions.append(Feedback(p.frame, "warn", "Пятки на пол", len(self.reps) + 1))
+            actions.append(Feedback(p.frame, "warn", "Пятки на пол", len(self.reps) + 1, "heels"))
 
         # Повторение закончилось — вернулись в ВЕРХ
         if p.phase == TOP:
@@ -157,7 +158,7 @@ class SquatCoachAgent:
                 feet_shift = max(abs(p.ankle_lx - self._feet_start[0]), abs(p.ankle_rx - self._feet_start[1]))
                 if hip_drop < r.min_hip_drop or feet_shift > r.max_feet_shift:
                     # колено сгибалось, но таз не опускался / стопы переступили — это шаги
-                    actions.append(Feedback(p.frame, "info", "Похоже на ходьбу, не засчитываю"))
+                    actions.append(Feedback(p.frame, "info", "Похоже на ходьбу, не засчитываю", code="walking"))
                 else:
                     actions.append(self._finish_rep(p.frame))
             # начинаем заново следить за положением стоя
@@ -189,10 +190,10 @@ class SquatCoachAgent:
         self.reps.append(rep)
 
         if rep.good:
-            return Feedback(end, "ok", f"Повторение {rep.number}: отлично!", rep.number)
+            return Feedback(end, "ok", f"Повторение {rep.number}: отлично!", rep.number, "rep")
         level = "danger" if rep.max_lean > r.max_torso_lean + r.danger_extra_lean else "warn"
         text = "; ".join(ERROR_TEXT[e] for e in rep.errors)
-        return Feedback(end, level, f"Повторение {rep.number}: {text}", rep.number)
+        return Feedback(end, level, f"Повторение {rep.number}: {text}", rep.number, "rep")
 
     def run(self, percepts) -> list[Feedback]:
         """Прогоняет агента по всем кадрам по очереди (так же он работал бы с веб-камерой)."""
