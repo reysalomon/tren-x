@@ -1,5 +1,6 @@
 """Живой режим (камера): потоковый анализ должен давать то же, что анализ целого видео."""
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -95,3 +96,20 @@ def test_phase_does_not_get_stuck_in_descent():
     assert s._next_phase() == UP
     s.phases.append(UP)
     assert s._next_phase() == TOP
+
+
+def test_voice_clips_for_both_languages():
+    """Для каждой голосовой фразы из live.js есть mp3 на казахском и русском."""
+    web = Path(server.__file__).resolve().parent / "web"
+    clips = re.search(r"const CLIPS = \[(.*?)\]", (web / "live.js").read_text()).group(1)
+    names = re.findall(r'"(\w+)"', clips)
+    assert len(names) == 9
+    for lang in ("kk", "ru"):
+        for name in names:
+            assert client_get(f"/audio/{lang}/{name}.mp3").headers["content-type"] == "audio/mpeg"
+
+
+def client_get(url):
+    r = TestClient(server.app).get(url)
+    assert r.status_code == 200, url
+    return r
