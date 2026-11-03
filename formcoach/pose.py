@@ -16,6 +16,8 @@ from mediapipe.tasks.python import BaseOptions, vision
 MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "pose_landmarker_full.task"
 
 # Номера нужных нам точек в модели MediaPipe Pose (всего их 33)
+NOSE = 0
+MOUTH_L, MOUTH_R = 9, 10
 L_SHOULDER, R_SHOULDER = 11, 12
 L_ELBOW, R_ELBOW = 13, 14
 L_WRIST, R_WRIST = 15, 16

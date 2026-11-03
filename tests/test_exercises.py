@@ -207,3 +207,80 @@ def test_pushup_demo_and_server(error):
     r = client.get("/api/demo", params={"exercise": "pushup", "errors": error, "lang": "kk"})
     assert r.status_code == 200
     assert [[e["key"] for e in rep["errors"]] for rep in r.json()["reps"]] == [[], [error], []]
+
+
+# ---------------- подтягивания ----------------
+from formcoach.exercises import PULLUP, PULLUP_DEMO, pullup_values  # noqa: E402
+
+
+def pullup_skeleton(elbow: float, lean: float = 5.0, facing: int = 1) -> np.ndarray:
+    """Человек на турнике сбоку: кисти на перекладине (y=100), elbow — угол локтя, lean — наклон корпуса."""
+    pts = np.zeros((33, 4))
+    pts[:, 3] = 0.95
+    half = np.radians(elbow) / 2
+    wrist = np.array([300.0, 100.0])
+    sh = wrist + [0, 2 * 70 * np.sin(half)]  # плечо под кистью: чем сильнее согнут локоть, тем ближе к перекладине
+    el = (sh + wrist) / 2 + [70 * np.cos(half) * facing, 0]  # локоть уходит вперёд
+    mouth = sh + [5 * facing, -56]  # рот выше плеча
+    r = np.radians(lean)
+    hip = sh + 150 * np.array([-np.sin(r) * facing, np.cos(r)])
+    knee, ankle = hip + [0, 100], hip + [0, 200]
+    pts[P.MOUTH_L, :2] = pts[P.MOUTH_R, :2] = pts[P.NOSE, :2] = mouth
+    for side in ("L", "R"):
+        g = lambda name: getattr(P, f"{side}_{name}")  # noqa: E731
+        for name, xy in [("SHOULDER", sh), ("ELBOW", el), ("WRIST", wrist), ("HIP", hip), ("KNEE", knee),
+                         ("ANKLE", ankle), ("HEEL", ankle), ("FOOT", ankle + [10 * facing, 0])]:
+            pts[g(name), :2] = xy
+    return pts
+
+
+def pullup_session(reps: int = 3, bad: dict | None = None, fps: float = 30.0) -> np.ndarray:
+    """Вис 1 с, потом reps подтягиваний по 2.2 с. bad — второе повторение:
+    {"elbow": угол наверху}, {"lean": раскачка}, {"hang": угол виса перед ним}."""
+    frames = []
+    for i in range(reps):
+        extra = bad if (bad and i == 1) else {}
+        hang = extra.get("hang", 170)
+        frames += [pullup_skeleton(hang)] * int(fps)
+        for j, k in enumerate((1 - np.cos(np.linspace(0, 2 * np.pi, int(2.2 * fps)))) / 2):
+            start = hang if j < int(1.1 * fps) else 170
+            frames.append(pullup_skeleton(start - (start - extra.get("elbow", 40)) * k, 5 + (extra.get("lean", 5) - 5) * k))
+    frames += [pullup_skeleton(170)] * int(fps)
+    return np.array(frames)
+
+
+def pullup_video(lm: np.ndarray):
+    return analyze_exercise(PULLUP, exercise_features(PULLUP, P.PoseSequence(lm, 30.0)), 30.0)
+
+
+def test_pullup_values():
+    v = pullup_values(pullup_skeleton(40), "L", 0)
+    assert v["elbow_angle"] == pytest.approx(40, abs=0.5)
+    assert v["chin_gap"] < 0  # рот над перекладиной
+    assert pullup_values(pullup_skeleton(170), "L", 0)["chin_gap"] > 1  # в висе — далеко внизу
+    assert pullup_values(pullup_skeleton(90, lean=30), "L", 0)["lean"] == pytest.approx(30, abs=0.5)
+
+
+@pytest.mark.parametrize("bad, code", [(None, None), ({"elbow": 75}, "chin_low"), ({"hang": 135}, "no_hang"),
+                                       ({"lean": 40}, "swing")])
+def test_pullup_video_on_skeleton(bad, code):
+    a = pullup_video(pullup_session(3, bad))
+    assert [r.errors for r in a.reps] == [[], [code] if code else [], []]
+
+
+def test_pullup_live_same_as_video():
+    lm = pullup_session(3, {"elbow": 75})
+    expected = [r.errors for r in pullup_video(lm).reps]
+    live = ExerciseLiveSession(PULLUP)
+    for i in range(0, len(lm), 2):
+        live.push(i / 30.0, lm[i])
+    assert [r.errors for r in live.agent.reps] == expected
+
+
+@pytest.mark.parametrize("error", list(PULLUP_DEMO))
+def test_pullup_demo_and_server(error):
+    r = client.get("/api/demo", params={"exercise": "pullup", "errors": error, "lang": "kk"})
+    assert r.status_code == 200
+    data = r.json()
+    assert [[e["key"] for e in rep["errors"]] for rep in data["reps"]] == [[], [error], []]
+    assert data["phase_names"]["ru"][0] == "ВИС"

@@ -11,7 +11,8 @@ const FALLBACK_DEFAULTS = {
 
 let defaults = { ...FALLBACK_DEFAULTS };
 let info = null; // /api/info: значения по умолчанию, упражнения, метрики моделей
-let exercise = loadExercise(); // "squat" | "deadlift" | "pushup"
+const EXERCISES = ["squat", "deadlift", "pushup", "pullup"];
+let exercise = loadExercise();
 let allSettings = loadSettings(); // настройки каждого упражнения отдельно: {squat: {...}, deadlift: {...}}
 let lastResult = null;
 let lastDemo = null; // список ошибок демо — чтобы пересчитать при смене настроек
@@ -82,7 +83,7 @@ function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("fc-settings")) || {};
     // старый формат (до становой тяги) — плоский объект настроек приседа
-    return ["squat", "deadlift", "pushup"].some((k) => k in saved) ? saved : { squat: saved };
+    return EXERCISES.some((k) => k in saved) ? saved : { squat: saved };
   } catch {
     return {};
   }
@@ -95,7 +96,7 @@ function saveSettings() {
 function loadExercise() {
   try {
     const saved = localStorage.getItem("fc-exercise");
-    if (["squat", "deadlift", "pushup"].includes(saved)) return saved;
+    if (EXERCISES.includes(saved)) return saved;
   } catch { /* приватный режим */ }
   return "squat";
 }
@@ -350,7 +351,10 @@ function renderChart(data) {
   const W = 340, H = 200, L = 30, R = 8, T = 10, B = 22;
   const tMax = times[times.length - 1] || 1;
   const x = (v) => L + (v / tMax) * (W - L - R);
-  const y = (v) => T + (1 - (v - 40) / (185 - 40)) * (H - T - B);
+  // низ шкалы — по данным: у подтягиваний локоть сгибается до ~40°, у приседа колено — до ~80°
+  const vals = knee.filter((k) => k !== null);
+  const lo = Math.min(40, Math.floor((Math.min(...vals, 60) - 15) / 20) * 20);
+  const y = (v) => T + (1 - (v - lo) / (185 - lo)) * (H - T - B);
 
   // подряд идущие точки одной фазы склеиваем в полосу
   let bands = "";
@@ -362,7 +366,7 @@ function renderChart(data) {
     i = j + 1;
   }
   let grid = "";
-  [60, 100, 140, 180].forEach((v) => {
+  [20, 60, 100, 140, 180].filter((v) => v > lo).forEach((v) => {
     grid += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 5}" y="${y(v) + 4}" text-anchor="end">${v}°</text>`;
   });
   const step = tMax > 40 ? 10 : 5;

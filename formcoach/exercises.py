@@ -1,4 +1,4 @@
-"""Другие упражнения (становая тяга, отжимания) на тех же AI-темах, что и приседания.
+"""Другие упражнения (становая тяга, отжимания, подтягивания) на тех же AI-темах, что и приседания.
 
 Цепочка та же, меняется только "что измерять":
   точки тела -> признаки упражнения -> HMM по ГЛАВНОМУ углу (неделя 7: ВЕРХ/ОПУСКАНИЕ/НИЗ/ПОДЪЁМ)
@@ -18,7 +18,7 @@ import numpy as np
 
 from . import pose as P
 from .agent import Feedback
-from .features import FOOT_MIN_VISIBILITY, joint_angle, smooth
+from .features import FOOT_MIN_VISIBILITY, joint_angle, lean_from_vertical, smooth
 from .hmm import TOP, squat_hmm
 from .live import MIN_VISIBILITY, hmm_for_step, next_phase
 from .pipeline import Analysis
@@ -291,7 +291,97 @@ PUSHUP = ExerciseSpec(
     },
 )
 
-EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP}
+
+# ---------------- подтягивания на турнике ----------------
+
+
+def pullup_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
+    """Признаки подтягивания на одном кадре (лучше сбоку; спереди не видно раскачку).
+
+    elbow_angle — угол в локте: ~165+ в полном висе, ~40 наверху. Это главный угол.
+    chin_gap — насколько рот НИЖЕ кистей (перекладины), в длинах предплечья: <0 — подбородок над перекладиной.
+    lean — наклон корпуса (плечо-таз) от вертикали: раскачка и рывки.
+    """
+    s = SIDES[side]
+    xy = pts[:, :2]
+    forearm = max(float(np.linalg.norm(xy[s["el"]] - xy[s["wr"]])), 1e-6)
+    mouth_vis = min(pts[P.MOUTH_L, 3], pts[P.MOUTH_R, 3])
+    mouth_y = (xy[P.MOUTH_L, 1] + xy[P.MOUTH_R, 1]) / 2
+    chin = float((mouth_y - xy[s["wr"], 1]) / forearm) if mouth_vis >= MIN_VISIBILITY else np.nan
+    lean = float(lean_from_vertical(xy[s["sh"]], xy[s["hip"]])) if pts[s["hip"], 3] >= MIN_VISIBILITY else np.nan
+    return {
+        "elbow_angle": float(joint_angle(xy[s["sh"]], xy[s["el"]], xy[s["wr"]])),
+        "chin_gap": chin,
+        "lean": lean,
+    }
+
+
+PULLUP = ExerciseSpec(
+    key="pullup",
+    main="elbow_angle",
+    top=165.0,
+    bottom=60.0,
+    speed=120.0,
+    min_dip=40.0,
+    checks=(
+        Check("chin_low", "chin_gap", "min", ">", "max_chin_gap"),
+        Check("no_hang", "main_start", "max", "<", "min_hang_elbow"),
+        Check("swing", "lean", "max", ">", "max_swing", live=True),
+    ),
+    fields=(
+        Field("max_chin_gap", 0.0, -0.5, 0.5, 0.05),
+        Field("min_hang_elbow", 150.0, 120.0, 175.0, 1.0, "°"),
+        Field("max_swing", 25.0, 10.0, 50.0, 1.0, "°"),
+        Field("min_rep_seconds", 1.0, 0.3, 3.0, 0.1, " s"),
+    ),
+    values=pullup_values,
+    facing_vote=no_facing,
+    required=("sh", "el", "wr"),
+    metrics=(("elbow_angle", "min", "°"), ("chin_gap", "min", ""), ("main_start", "max", "°"), ("lean", "max", "°")),
+    text={
+        "ru": {
+            "name": "Подтягивания",
+            # главный угол уменьшается, когда человек поднимается, поэтому "ВЕРХ" HMM — это вис
+            "phases": ["ВИС", "ПОДЪЁМ", "ВВЕРХУ", "ОПУСКАНИЕ"],
+            "error": {
+                "chin_low": "Подбородок не поднялся выше перекладины — тянись до конца",
+                "no_hang": "Руки не выпрямились внизу — опускайся до полного виса",
+                "swing": "Раскачиваешься — держи корпус ровно, без рывков",
+                "fast": "Слишком быстро — опускайся подконтрольно",
+            },
+            "short": {"chin_low": "подбородок", "no_hang": "не довис", "swing": "раскачка", "fast": "быстро"},
+            "live": {"swing": "Не раскачивайся"},
+            "metric": {"elbow_angle": "Локоть", "chin_gap": "Подбородок", "main_start": "Вис", "lean": "Раскачка"},
+            "fields": {
+                "max_chin_gap": ("Рот относительно перекладины", "В длинах предплечья: 0 — рот на уровне кистей, меньше 0 — выше перекладины."),
+                "min_hang_elbow": ("Угол локтя в висе, мин.", "Меньше — руки не выпрямились, полуповторение."),
+                "max_swing": ("Раскачка корпуса, макс.", "Наклон корпуса от вертикали. Видно только сбоку."),
+                "min_rep_seconds": ("Мин. время повторения", "Быстрее — рывками, без контроля."),
+            },
+        },
+        "kk": {
+            "name": "Турникке тартылу",
+            "phases": ["АСЫЛУ", "КӨТЕРІЛУ", "ЖОҒАРЫДА", "ТҮСУ"],
+            "error": {
+                "chin_low": "Иек турниктен жоғары көтерілмеді — соңына дейін тартыл",
+                "no_hang": "Төменде қол түзелмеді — толық асылғанша түс",
+                "swing": "Тербелесің — денені тік ұста, серпілмей",
+                "fast": "Тым жылдам — бақылап, баяу түс",
+            },
+            "short": {"chin_low": "иек", "no_hang": "толық асылмау", "swing": "тербелу", "fast": "жылдам"},
+            "live": {"swing": "Тербелме"},
+            "metric": {"elbow_angle": "Шынтақ", "chin_gap": "Иек", "main_start": "Асылу", "lean": "Тербелу"},
+            "fields": {
+                "max_chin_gap": ("Ауыздың турникке қатысты орны", "Білек ұзындығымен: 0 — ауыз қол деңгейінде, 0-ден аз — турниктен жоғары."),
+                "min_hang_elbow": ("Асылғанда шынтақ бұрышы, ең аз", "Аз болса — қол түзелмеді, жарты қайталау."),
+                "max_swing": ("Дененің тербелуі, ең көп", "Дененің тік сызықтан ауытқуы. Тек бүйірден көрінеді."),
+                "min_rep_seconds": ("Қайталаудың ең аз уақыты", "Жылдамырақ — серпіліп, бақылаусыз."),
+            },
+        },
+    },
+)
+
+EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP, "pullup": PULLUP}
 
 
 def get_exercise(key: str) -> ExerciseSpec:
@@ -341,7 +431,8 @@ class ExerciseCoachAgent:
         self._standing = -np.inf  # самый большой главный угол стоя перед повторением
         self._warned: set[str] = set()
         self._last_end = -10**9  # кадр конца последнего повторения
-        self._tracked = sorted({spec.main} | {c.feature for c in spec.checks} | {m[0] for m in spec.metrics})
+        names = {spec.main} | {c.feature for c in spec.checks} | {m[0] for m in spec.metrics}
+        self._tracked = sorted(names - {"main_start"})  # main_start — не признак кадра, его помнит агент
 
     def _start_rep(self, frame: int, v: dict):
         self._in_rep, self._start, self._warned, self._agg = True, frame, set(), {}
@@ -400,6 +491,7 @@ class ExerciseCoachAgent:
 
     def _finish(self, end: int) -> Feedback:
         values = {k: float(x) for k, x in self._agg.items()}
+        values["main_start:max"] = float(self._standing)  # главный угол в исходном положении перед повторением
         rep = ExerciseRep(len(self.reps) + 1, self._start, end, self._bottom_frame, (end - self._start) / self.fps, values)
         rep.errors = [c.code for c in self.spec.checks
                       if c.broken(values.get(f"{c.feature}:{c.agg}", np.nan), self.rules[c.rule])]
@@ -641,10 +733,57 @@ def pushup_synthetic(reps: list[PushupRep], fps: float = 30.0, pause_sec: float 
     return feats
 
 
+@dataclass
+class PullupRep:
+    elbow: float = 40.0  # угол локтя наверху
+    chin: float = -0.15  # рот относительно перекладины наверху (<0 — выше)
+    hang: float = 170.0  # угол локтя в висе ПЕРЕД этим повторением
+    swing: float = 8.0  # наибольший наклон корпуса
+    seconds: float = 2.2
+
+
+PULLUP_DEMO = {
+    "chin_low": PullupRep(elbow=70.0, chin=0.35),
+    "no_hang": PullupRep(hang=140.0),
+    "swing": PullupRep(swing=40.0),
+    "fast": PullupRep(seconds=0.7),
+}
+
+
+def pullup_synthetic(reps: list[PullupRep], fps: float = 30.0, pause_sec: float = 1.0, noise: float = 1.5,
+                     seed: int = 0) -> dict[str, np.ndarray]:
+    """Синтетические подтягивания: признаки, заданные формулой (для демо и тестов).
+    Каждое повторение: вис (угол r.hang) -> вверх до r.elbow -> вниз до виса следующего повторения."""
+    rng = np.random.default_rng(seed)
+    n_pause = int(pause_sec * fps)
+    elbow, lean = [], []
+    for i, r in enumerate(reps):
+        nxt = reps[i + 1].hang if i + 1 < len(reps) else 170.0
+        k = (1 - np.cos(np.linspace(0, 2 * np.pi, max(int(r.seconds * fps), 3)))) / 2
+        base = np.where(np.arange(len(k)) < len(k) // 2, r.hang, nxt)  # откуда поднимается / куда опускается
+        elbow += [np.full(n_pause, r.hang), base - (base - r.elbow) * k]
+        lean += [np.full(n_pause, 5.0), 5 + (r.swing - 5) * k]
+    elbow.append(np.full(n_pause, 170.0))
+    lean.append(np.full(n_pause, 5.0))
+    elbow_angle = np.concatenate(elbow)
+    # рот поднимается вместе со сгибанием локтя: в висе (170°) он на 2 предплечья ниже перекладины
+    tops = np.concatenate([np.full(n_pause + max(int(r.seconds * fps), 3), r.chin) for r in reps] + [np.full(n_pause, -0.15)])
+    lows = np.concatenate([np.full(n_pause + max(int(r.seconds * fps), 3), r.elbow) for r in reps] + [np.full(n_pause, 40.0)])
+    chin = tops + (2.0 - tops) * (elbow_angle - lows) / (170.0 - lows)
+    feats = {
+        "elbow_angle": smooth(elbow_angle + rng.normal(0, noise, len(elbow_angle)), 5),
+        "chin_gap": smooth(chin + rng.normal(0, 0.02, len(chin)), 5),
+        "lean": smooth(np.concatenate(lean) + rng.normal(0, noise, len(elbow_angle)), 5),
+    }
+    feats["main_vel"] = np.gradient(feats["elbow_angle"]) * fps
+    return feats
+
+
 # для каждого упражнения: (ошибки демо -> параметры повторения, правильное повторение, генератор)
 DEMOS = {
     "deadlift": (DEADLIFT_DEMO, DeadliftRep, deadlift_synthetic),
     "pushup": (PUSHUP_DEMO, PushupRep, pushup_synthetic),
+    "pullup": (PULLUP_DEMO, PullupRep, pullup_synthetic),
 }
 DEMO_ERRORS = {key: list(d[0]) for key, d in DEMOS.items()}
 
