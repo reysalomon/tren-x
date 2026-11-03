@@ -1,4 +1,4 @@
-"""Другие упражнения (сейчас — становая тяга) на тех же AI-темах, что и приседания.
+"""Другие упражнения (становая тяга, отжимания) на тех же AI-темах, что и приседания.
 
 Цепочка та же, меняется только "что измерять":
   точки тела -> признаки упражнения -> HMM по ГЛАВНОМУ углу (неделя 7: ВЕРХ/ОПУСКАНИЕ/НИЗ/ПОДЪЁМ)
@@ -195,7 +195,103 @@ DEADLIFT = ExerciseSpec(
     },
 )
 
-EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT}
+
+# ---------------- отжимания ----------------
+
+
+def pushup_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
+    """Признаки отжимания на одном кадре (камера сбоку, на уровне пола).
+
+    elbow_angle — угол в локте (плечо-локоть-кисть): ~160+ на прямых руках, ~90 внизу. Это главный угол.
+    sag  — насколько таз провис НИЖЕ линии плечо-лодыжка, градусы (0 — тело прямое или таз выше).
+    pike — насколько таз задран ВЫШЕ этой линии, градусы.
+    Изгиб тела = 180 - угол плечо-таз-лодыжка; выше или ниже линии — смотрим по координате y таза.
+    """
+    s = SIDES[side]
+    xy = pts[:, :2]
+    foot = s["ankle"] if pts[s["ankle"], 3] >= MIN_VISIBILITY else s["knee"]  # лодыжку не видно — берём колено
+    sh, hip, end = xy[s["sh"]], xy[s["hip"]], xy[foot]
+    bend = 180.0 - float(joint_angle(sh, hip, end))
+    dx = end[0] - sh[0]
+    line_y = sh[1] + (end[1] - sh[1]) * (hip[0] - sh[0]) / dx if abs(dx) > 1e-6 else hip[1]
+    below = hip[1] > line_y  # ось y вниз: больше y — ниже на картинке
+    return {
+        "elbow_angle": float(joint_angle(xy[s["sh"]], xy[s["el"]], xy[s["wr"]])),
+        "sag": bend if below else 0.0,
+        "pike": 0.0 if below else bend,
+    }
+
+
+def no_facing(pts: np.ndarray, side: str) -> float:
+    """Для отжиманий направление взгляда не нужно."""
+    return 0.0
+
+
+PUSHUP = ExerciseSpec(
+    key="pushup",
+    main="elbow_angle",
+    top=160.0,
+    bottom=90.0,
+    speed=90.0,
+    min_dip=30.0,  # неглубокое отжимание (локоть до ~125°) тоже засчитываем — с ошибкой "неглубоко"
+    checks=(
+        Check("shallow", "elbow_angle", "min", ">", "max_bottom_elbow"),
+        Check("sag", "sag", "max", ">", "max_sag", live=True),
+        Check("pike", "pike", "max", ">", "max_pike", live=True),
+    ),
+    fields=(
+        Field("max_bottom_elbow", 100.0, 70.0, 130.0, 1.0, "°"),
+        Field("max_sag", 15.0, 5.0, 40.0, 1.0, "°"),
+        Field("max_pike", 20.0, 5.0, 45.0, 1.0, "°"),
+        Field("min_rep_seconds", 0.8, 0.3, 3.0, 0.1, " s"),
+    ),
+    values=pushup_values,
+    facing_vote=no_facing,
+    required=("sh", "el", "wr", "hip"),
+    metrics=(("elbow_angle", "min", "°"), ("sag", "max", "°"), ("pike", "max", "°")),
+    text={
+        "ru": {
+            "name": "Отжимания",
+            "phases": ["ВЕРХ", "ОПУСКАНИЕ", "НИЗ", "ПОДЪЁМ"],
+            "error": {
+                "shallow": "Неглубоко — опускайся, пока локти не согнутся до 90°",
+                "sag": "Таз провисает — напряги пресс и ягодицы, тело в одну линию",
+                "pike": "Таз задран вверх — опусти его, тело в одну линию",
+                "fast": "Слишком быстро — опускайся подконтрольно",
+            },
+            "short": {"shallow": "неглубоко", "sag": "провис", "pike": "таз вверх", "fast": "быстро"},
+            "live": {"sag": "Не прогибайся в пояснице", "pike": "Опусти таз"},
+            "metric": {"elbow_angle": "Локоть", "sag": "Провис", "pike": "Таз вверх"},
+            "fields": {
+                "max_bottom_elbow": ("Угол локтя внизу, макс.", "Больше — отжимание неглубокое. 90° — локоть под прямым углом."),
+                "max_sag": ("Провис таза, макс.", "На сколько градусов таз может уйти ниже линии плечо–лодыжка."),
+                "max_pike": ("Таз вверх, макс.", "На сколько градусов таз может подняться выше этой линии."),
+                "min_rep_seconds": ("Мин. время повторения", "Быстрее — «падает» вниз без контроля."),
+            },
+        },
+        "kk": {
+            "name": "Жерден итерілу",
+            "phases": ["ЖОҒАРЫ", "ТҮСУ", "ТӨМЕН", "КӨТЕРІЛУ"],
+            "error": {
+                "shallow": "Таяз — шынтақ 90°-қа дейін бүгілгенше төмен түс",
+                "sag": "Жамбас төмен салбырайды — іш пен бөксені қатайт, дене бір түзу сызықта болсын",
+                "pike": "Жамбас жоғары көтерілген — оны түсір, дене бір түзу сызықта болсын",
+                "fast": "Тым жылдам — бақылап, баяу түс",
+            },
+            "short": {"shallow": "таяз", "sag": "салбырау", "pike": "жамбас жоғары", "fast": "жылдам"},
+            "live": {"sag": "Белді майыстырма", "pike": "Жамбасты түсір"},
+            "metric": {"elbow_angle": "Шынтақ", "sag": "Салбырау", "pike": "Жамбас жоғары"},
+            "fields": {
+                "max_bottom_elbow": ("Төменде шынтақ бұрышы, ең көп", "Көп болса — таяз итерілу. 90° — шынтақ тік бұрышпен."),
+                "max_sag": ("Жамбастың салбырауы, ең көп", "Жамбас иық–тобық сызығынан неше градус төмен түсе алады."),
+                "max_pike": ("Жамбас жоғары, ең көп", "Жамбас бұл сызықтан неше градус жоғары көтеріле алады."),
+                "min_rep_seconds": ("Қайталаудың ең аз уақыты", "Жылдамырақ — бақылаусыз төмен «құлайды»."),
+            },
+        },
+    },
+)
+
+EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP}
 
 
 def get_exercise(key: str) -> ExerciseSpec:
@@ -482,7 +578,6 @@ DEADLIFT_DEMO = {
     "stiff_legs": DeadliftRep(knee=172.0),
     "fast": DeadliftRep(seconds=0.8),
 }
-DEMO_ERRORS = {"deadlift": list(DEADLIFT_DEMO)}
 
 
 def deadlift_synthetic(reps: list[DeadliftRep], fps: float = 30.0, pause_sec: float = 1.0, noise: float = 1.5,
@@ -510,9 +605,54 @@ def deadlift_synthetic(reps: list[DeadliftRep], fps: float = 30.0, pause_sec: fl
     return feats
 
 
+@dataclass
+class PushupRep:
+    elbow: float = 85.0  # угол локтя внизу
+    sag: float = 3.0  # провис таза внизу, градусы
+    pike: float = 0.0  # таз вверх внизу, градусы
+    seconds: float = 2.0
+
+
+PUSHUP_DEMO = {
+    "shallow": PushupRep(elbow=125.0),
+    "sag": PushupRep(sag=25.0),
+    "pike": PushupRep(pike=30.0),
+    "fast": PushupRep(seconds=0.6),
+}
+
+
+def pushup_synthetic(reps: list[PushupRep], fps: float = 30.0, pause_sec: float = 1.0, noise: float = 1.5,
+                     seed: int = 0) -> dict[str, np.ndarray]:
+    """Синтетические отжимания: признаки, заданные формулой (для демо и тестов)."""
+    rng = np.random.default_rng(seed)
+    n_pause = int(pause_sec * fps)
+    top = 165.0
+    parts = {"elbow_angle": [np.full(n_pause, top)], "sag": [np.zeros(n_pause)], "pike": [np.zeros(n_pause)]}
+    for r in reps:
+        k = (1 - np.cos(np.linspace(0, 2 * np.pi, max(int(r.seconds * fps), 3)))) / 2
+        parts["elbow_angle"] += [top - (top - r.elbow) * k, np.full(n_pause, top)]
+        parts["sag"] += [r.sag * k, np.zeros(n_pause)]
+        parts["pike"] += [r.pike * k, np.zeros(n_pause)]
+    feats = {}
+    for key, chunks in parts.items():
+        x = np.concatenate(chunks) + rng.normal(0, noise, sum(map(len, chunks)))
+        feats[key] = smooth(np.maximum(x, 0) if key != "elbow_angle" else x, 5)
+    feats["main_vel"] = np.gradient(feats["elbow_angle"]) * fps
+    return feats
+
+
+# для каждого упражнения: (ошибки демо -> параметры повторения, правильное повторение, генератор)
+DEMOS = {
+    "deadlift": (DEADLIFT_DEMO, DeadliftRep, deadlift_synthetic),
+    "pushup": (PUSHUP_DEMO, PushupRep, pushup_synthetic),
+}
+DEMO_ERRORS = {key: list(d[0]) for key, d in DEMOS.items()}
+
+
 def demo_session(spec: ExerciseSpec, errors: list[str], fps: float = 30.0) -> dict[str, np.ndarray]:
     """Демо: правильное повторение, потом по очереди выбранные ошибки, между ними — правильные."""
-    plan = [DeadliftRep()]
+    bad, good, make = DEMOS[spec.key]
+    plan = [good()]
     for e in errors:
-        plan += [DEADLIFT_DEMO[e], DeadliftRep()]
-    return deadlift_synthetic(plan, fps)
+        plan += [bad[e], good()]
+    return make(plan, fps)

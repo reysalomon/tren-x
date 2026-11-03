@@ -11,7 +11,7 @@ const FALLBACK_DEFAULTS = {
 
 let defaults = { ...FALLBACK_DEFAULTS };
 let info = null; // /api/info: значения по умолчанию, упражнения, метрики моделей
-let exercise = loadExercise(); // "squat" | "deadlift"
+let exercise = loadExercise(); // "squat" | "deadlift" | "pushup"
 let allSettings = loadSettings(); // настройки каждого упражнения отдельно: {squat: {...}, deadlift: {...}}
 let lastResult = null;
 let lastDemo = null; // список ошибок демо — чтобы пересчитать при смене настроек
@@ -82,7 +82,7 @@ function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("fc-settings")) || {};
     // старый формат (до становой тяги) — плоский объект настроек приседа
-    return "squat" in saved || "deadlift" in saved ? saved : { squat: saved };
+    return ["squat", "deadlift", "pushup"].some((k) => k in saved) ? saved : { squat: saved };
   } catch {
     return {};
   }
@@ -95,7 +95,7 @@ function saveSettings() {
 function loadExercise() {
   try {
     const saved = localStorage.getItem("fc-exercise");
-    if (saved === "squat" || saved === "deadlift") return saved;
+    if (["squat", "deadlift", "pushup"].includes(saved)) return saved;
   } catch { /* приватный режим */ }
   return "squat";
 }

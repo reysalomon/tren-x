@@ -135,3 +135,75 @@ def test_websocket_deadlift():
         ws.send_json({"type": "stop"})
         result = ws.receive_json()
         assert result["type"] == "result" and result["data"]["exercise"] == "deadlift"
+
+
+# ---------------- отжимания ----------------
+from formcoach.exercises import PUSHUP, PUSHUP_DEMO, pushup_values  # noqa: E402
+
+
+def pushup_skeleton(elbow: float, hip_shift: float = 0.0, facing: int = 1) -> np.ndarray:
+    """Человек в упоре лёжа сбоку. elbow — угол локтя; hip_shift — таз ниже (+) или выше (-) прямой линии, пиксели."""
+    pts = np.zeros((33, 4))
+    pts[:, 3] = 0.95
+    half = np.radians(elbow) / 2
+    wrist = np.array([300 + 100 * facing, 520.0])
+    sh = wrist - [0, 2 * 70 * np.sin(half)]  # плечо над кистью, высота зависит от угла локтя
+    el = (sh + wrist) / 2 - [70 * np.cos(half) * facing, 0]  # локоть уходит назад, к ногам
+    ankle = np.array([300 - 200 * facing, 510.0])
+    hip = (sh + ankle) / 2 + [0, hip_shift]
+    for side in ("L", "R"):
+        g = lambda name: getattr(P, f"{side}_{name}")  # noqa: E731
+        for name, xy in [("SHOULDER", sh), ("ELBOW", el), ("WRIST", wrist), ("HIP", hip), ("ANKLE", ankle),
+                         ("KNEE", (hip + ankle) / 2), ("HEEL", ankle), ("FOOT", ankle + [10 * facing, 5])]:
+            pts[g(name), :2] = xy
+    return pts
+
+
+def pushup_session(reps: int = 3, bad: dict | None = None, fps: float = 30.0) -> np.ndarray:
+    """Стоит в упоре 1 с, потом reps отжиманий по 2 с; bad — второе повторение: {"elbow": .., "hip": ..}."""
+    frames = [pushup_skeleton(165)] * int(fps)
+    for i in range(reps):
+        extra = bad if (bad and i == 1) else {}
+        for k in (1 - np.cos(np.linspace(0, 2 * np.pi, int(2 * fps)))) / 2:
+            frames.append(pushup_skeleton(165 - (165 - extra.get("elbow", 85)) * k, extra.get("hip", 0) * k))
+        frames += [pushup_skeleton(165)] * int(fps)
+    return np.array(frames)
+
+
+def pushup_video(lm: np.ndarray):
+    return analyze_exercise(PUSHUP, exercise_features(PUSHUP, P.PoseSequence(lm, 30.0)), 30.0)
+
+
+def test_pushup_values():
+    for facing in (1, -1):
+        v = pushup_values(pushup_skeleton(90, facing=facing), "L", 0)
+        assert v["elbow_angle"] == pytest.approx(90, abs=0.5)
+        assert v["sag"] == pytest.approx(0, abs=0.5) and v["pike"] == pytest.approx(0, abs=0.5)
+        assert pushup_values(pushup_skeleton(160, 30, facing), "L", 0)["sag"] > 10
+        assert pushup_values(pushup_skeleton(160, -30, facing), "L", 0)["pike"] > 10
+
+
+@pytest.mark.parametrize("bad, code", [(None, None), ({"elbow": 125}, "shallow"), ({"hip": 40}, "sag"),
+                                       ({"hip": -45}, "pike")])
+def test_pushup_video_on_skeleton(bad, code):
+    a = pushup_video(pushup_session(3, bad))
+    assert len(a.reps) == 3
+    expected = [[], [code] if code else [], []]
+    assert [r.errors for r in a.reps] == expected
+
+
+@pytest.mark.parametrize("fps", [30, 10])
+def test_pushup_live_same_as_video(fps):
+    lm = pushup_session(3, {"hip": 40})
+    expected = [r.errors for r in pushup_video(lm).reps]
+    live = ExerciseLiveSession(PUSHUP)
+    for i in range(0, len(lm), 30 // fps):
+        live.push(i / 30.0, lm[i])
+    assert [r.errors for r in live.agent.reps] == expected
+
+
+@pytest.mark.parametrize("error", list(PUSHUP_DEMO))
+def test_pushup_demo_and_server(error):
+    r = client.get("/api/demo", params={"exercise": "pushup", "errors": error, "lang": "kk"})
+    assert r.status_code == 200
+    assert [[e["key"] for e in rep["errors"]] for rep in r.json()["reps"]] == [[], [error], []]
