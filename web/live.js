@@ -111,7 +111,7 @@ function onEvent(e) {
     say("danger", true);
     live.spokenThisRep.add("lean");
     showHint(text, "danger");
-  } else if (e.code === "lean" || e.code === "heels") {
+  } else if (e.code !== "walking") { // lean, heels и подсказки других упражнений (bar_far, lean_back...)
     say(e.code);
     live.spokenThisRep.add(e.code);
     showHint(text, "warn");
@@ -128,7 +128,7 @@ function onState(s) {
     live.noPersonSince = 0;
     liveStatus(null);
     $("#live-phase").hidden = false;
-    $("#live-phase").textContent = t(`ph${s.phase}`);
+    $("#live-phase").textContent = tx(live.phaseNames)?.[s.phase] ?? t(`ph${s.phase}`);
     $("#live-phase").dataset.phase = s.phase;
   } else {
     live.noPersonSince ||= now;
@@ -183,10 +183,13 @@ async function loadLandmarker() {
 function connect() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/live`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "start", lang, settings: current() }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "start", lang, exercise, settings: current() }));
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data);
-      if (msg.type === "ready") resolve(ws);
+      if (msg.type === "ready") {
+        live.phaseNames = msg.phase_names ?? null; // у каждого упражнения свои названия фаз
+        resolve(ws);
+      }
       else if (msg.type === "state") {
         live.inflight = Math.max(0, live.inflight - 1);
         onState(msg);

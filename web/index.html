@@ -32,8 +32,15 @@
 
     <section class="hero">
       <p class="eyebrow" data-i18n="eyebrow"></p>
-      <h1 data-i18n="hero_title"></h1>
+      <h1 data-i18n="hero_title" data-i18n-ex></h1>
       <p class="lead" data-i18n="hero_lead"></p>
+    </section>
+
+    <section class="ex-pick" aria-labelledby="ex-title">
+      <p class="eyebrow" id="ex-title" data-i18n="ex_title"></p>
+      <div class="lang-switch lang-switch-big" role="group" aria-labelledby="ex-title">
+        <button type="button" data-ex="squat" data-i18n="ex_squat"></button><button type="button" data-ex="deadlift" data-i18n="ex_deadlift"></button>
+      </div>
     </section>
 
     <section class="actions">
@@ -60,7 +67,7 @@
       <h2 class="card-title" data-i18n="how_title"></h2>
       <ol class="tips">
         <li><span data-i18n="tip1"></span></li>
-        <li><span data-i18n="tip2"></span></li>
+        <li><span data-i18n="tip2" data-i18n-ex></span></li>
         <li><span data-i18n="tip3"></span></li>
         <li><span data-i18n="tip4"></span></li>
       </ol>
@@ -69,12 +76,7 @@
     <section class="card">
       <h2 class="card-title" data-i18n="demo_title"></h2>
       <p class="muted" data-i18n="demo_text"></p>
-      <div class="chips" id="demo-chips">
-        <button class="chip on" data-err="shallow" aria-pressed="true" data-i18n="err_shallow"></button>
-        <button class="chip on" data-err="lean" aria-pressed="true" data-i18n="err_lean"></button>
-        <button class="chip" data-err="heels" aria-pressed="false" data-i18n="err_heels"></button>
-        <button class="chip" data-err="fast" aria-pressed="false" data-i18n="err_fast"></button>
-      </div>
+      <div class="chips" id="demo-chips"></div>
       <button class="btn btn-ghost" id="btn-demo" data-i18n="btn_demo"></button>
     </section>
 
@@ -127,7 +129,7 @@
       <section class="reps" id="reps"></section>
 
       <section class="card">
-        <h2 class="card-title" data-i18n="chart_title"></h2>
+        <h2 class="card-title" id="chart-title"></h2>
         <div class="legend" id="legend"></div>
         <div class="chart" id="chart"></div>
         <p class="muted small" data-i18n="chart_note"></p>
@@ -155,6 +157,8 @@
     <form id="settings-form" onsubmit="return false">
       <section class="card">
         <h2 class="card-title" data-i18n="rules_title"></h2>
+        <div id="rules-ex"></div>
+        <div id="rules-squat">
         <div class="field" data-key="max_thigh_angle" data-min="-10" data-max="70" data-step="1" data-unit="°"
              data-label="f_thigh" data-help="f_thigh_help"></div>
         <div class="field" data-key="max_torso_lean" data-min="15" data-max="70" data-step="1" data-unit="°"
@@ -163,6 +167,7 @@
              data-label="f_heel" data-help="f_heel_help"></div>
         <div class="field" data-key="min_rep_seconds" data-min="0.3" data-max="3" data-step="0.1" data-unit=" s"
              data-label="f_time" data-help="f_time_help"></div>
+        </div>
       </section>
       <section class="card">
         <h2 class="card-title" data-i18n="phases_title"></h2>

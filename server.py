@@ -20,6 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from formcoach import synthetic as syn
 from formcoach.agent import ERROR_TEXT, SquatRules
 from formcoach.classifier import CLASS_RU, DATA as ML_DATA, FormClassifier
+from formcoach.exercises import (DEMO_ERRORS, EXERCISES, ExerciseLiveSession, ExerciseSpec, analyze_exercise,
+                                 default_hmm, demo_session, exercise_features)
 from formcoach.features import squat_features
 from formcoach.hmm import STATE_NAMES, squat_hmm
 from formcoach.live import LiveSession
@@ -78,6 +80,7 @@ ERRORS = {
         "no_person": "Человек найден только на {ratio:.0%} кадров. Сними так, чтобы всё тело было в кадре.",
         "failed": "Не получилось обработать видео: {e}",
         "unknown_errors": "Неизвестные ошибки: {names}",
+        "unknown_exercise": "Неизвестное упражнение: {name}",
     },
     "kk": {
         "bad_settings": "Баптаулар қате форматта жіберілді.",
@@ -89,6 +92,7 @@ ERRORS = {
         "no_person": "Адам кадрлардың тек {ratio:.0%} бөлігінде табылды. Бүкіл дене кадрға сиятындай түсір.",
         "failed": "Видеоны өңдеу мүмкін болмады: {e}",
         "unknown_errors": "Белгісіз қателер: {names}",
+        "unknown_exercise": "Белгісіз жаттығу: {name}",
     },
 }
 
@@ -107,15 +111,26 @@ def both(make) -> dict:
     return {lang: make(TEXT[lang]) for lang in LANGS}
 
 
-def feedback_text(f, reps_by_number: dict) -> dict:
+def texts_for(exercise: str) -> dict:
+    """Тексты упражнения на двух языках в одном виде: {"ru": {...}, "kk": {...}}.
+    Для приседа — таблица TEXT выше, для остальных — тексты из formcoach/exercises.py."""
+    if exercise == "squat":
+        return TEXT
+    spec = EXERCISES[exercise]
+    return {lang: {**spec.text[lang], "classes": {}, "rep_ok": TEXT[lang]["rep_ok"], "rep_bad": TEXT[lang]["rep_bad"]}
+            for lang in LANGS}
+
+
+def feedback_text(f, reps_by_number: dict, texts: dict = TEXT) -> dict:
     """Подсказка агента на двух языках: собираем её заново по коду (агент хранит только русский текст)."""
-    if f.code in TEXT["ru"]["live"]:
-        return both(lambda T: T["live"][f.code])
+    pick = lambda make: {lang: make(texts[lang]) for lang in LANGS}  # noqa: E731
+    if f.code in texts["ru"]["live"]:
+        return pick(lambda T: T["live"][f.code])
     if f.code == "rep" and f.rep in reps_by_number:
         r = reps_by_number[f.rep]
         if r.good:
-            return both(lambda T: T["rep_ok"].format(n=r.number))
-        return both(lambda T: T["rep_bad"].format(n=r.number, text="; ".join(T["error"][e] for e in r.errors)))
+            return pick(lambda T: T["rep_ok"].format(n=r.number))
+        return pick(lambda T: T["rep_bad"].format(n=r.number, text="; ".join(T["error"][e] for e in r.errors)))
     return {lang: f.message for lang in LANGS}
 
 app = FastAPI(title="FormCoach AI")
@@ -152,6 +167,41 @@ def parse_settings(raw: str | None, lang: str = "ru") -> tuple[dict, SquatRules]
         min_rep_seconds=num("min_rep_seconds", d.min_rep_seconds, 0.3, 3.0),
     )
     return hmm, rules
+
+
+def check_exercise(exercise: str | None, lang: str) -> str:
+    exercise = exercise or "squat"
+    if exercise != "squat" and exercise not in EXERCISES:
+        raise fail(400, lang, "unknown_exercise", name=exercise)
+    return exercise
+
+
+def parse_exercise_settings(spec: ExerciseSpec, raw: str | None, lang: str = "ru") -> tuple[dict, dict]:
+    """Как parse_settings, но для упражнения из exercises.py: пороги берём из его описания (spec.fields)."""
+    try:
+        s = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        raise fail(400, lang, "bad_settings")
+    if not isinstance(s, dict):
+        raise fail(400, lang, "bad_settings")
+
+    def num(key, default, lo, hi):
+        v = s.get(key, default)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
+            raise fail(400, lang, "bad_param", key=key, lo=lo, hi=hi)
+        return float(v)
+
+    hmm = default_hmm(spec)
+    hmm.update(top_angle=num("top_angle", spec.top, 140, 180), bottom_angle=num("bottom_angle", spec.bottom, 50, 130),
+               stay_prob=num("stay_prob", 0.9, 0.5, 0.99))
+    if hmm["bottom_angle"] >= hmm["top_angle"]:
+        raise fail(400, lang, "bad_param", key="bottom_angle", lo=50, hi=hmm["top_angle"])
+    rules = {f.key: num(f.key, f.default, f.lo, f.hi) for f in spec.fields}
+    return hmm, rules
+
+
+def settings_for(exercise: str, raw: str | None, lang: str):
+    return parse_settings(raw, lang) if exercise == "squat" else parse_exercise_settings(EXERCISES[exercise], raw, lang)
 
 
 def crop_to_body(img: np.ndarray, points: np.ndarray, aspect: float = 4 / 3, margin: float = 0.15) -> np.ndarray:
@@ -198,40 +248,62 @@ def clean(x) -> float | None:
     return None if x is None or np.isnan(x) else round(float(x), 2)
 
 
-def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landmarks: np.ndarray | None = None) -> dict:
+def rep_json(r, v, exercise: str, texts: dict) -> dict:
+    """Одно повторение для карточки. У приседа свои поля (min_knee, ...), у других упражнений —
+    общий список metrics: подпись, значение, единица и превышен ли порог."""
+    pick = lambda make: {lang: make(texts[lang]) for lang in LANGS}  # noqa: E731
+    out = {
+        "number": r.number,
+        "good": r.good,
+        "errors": [{"key": e, "short": pick(lambda T: T["short"][e]), "text": pick(lambda T: T["error"][e])} for e in r.errors],
+        "seconds": clean(r.seconds),
+        "ml": None if v is None else {
+            "label": v.label, "label_text": pick(lambda T: T["classes"][v.label]), "no_feet": v.no_feet,
+            "probs": {k: clean(p) for k, p in v.probs.items()},
+        },
+    }
+    if exercise == "squat":
+        out.update(min_knee=clean(r.min_knee), min_thigh=clean(r.min_thigh), max_lean=clean(r.max_lean),
+                   max_heel=clean(r.max_heel))
+        return out
+    spec = EXERCISES[exercise]
+    over = {(c.feature, c.agg) for c in spec.checks if c.code in r.errors}
+    out["metrics"] = [{"label": pick(lambda T: T["metric"][name]), "value": clean(r.values.get(f"{name}:{agg}", np.nan)),
+                       "unit": unit, "over": (name, agg) in over} for name, agg, unit in spec.metrics]
+    return out
+
+
+def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landmarks: np.ndarray | None = None,
+            exercise: str = "squat") -> dict:
     """Результат анализа в виде, удобном для интерфейса."""
+    texts = texts_for(exercise)
+    pick = lambda make: {lang: make(texts[lang]) for lang in LANGS}  # noqa: E731
+    main = "knee_angle" if exercise == "squat" else EXERCISES[exercise].main
+    bottom_value = (lambda r: r.min_knee) if exercise == "squat" else (lambda r: r.values[f"{main}:min"])
     reps = []
     for r, v in zip(a.reps, a.ml):
-        reps.append({
-            "number": r.number,
-            "start_s": round(r.start / a.fps, 2), "end_s": round(r.end / a.fps, 2),
-            "good": r.good,
-            "errors": [{"key": e, "short": both(lambda T: T["short"][e]), "text": both(lambda T: T["error"][e])}
-                       for e in r.errors],
-            "min_knee": clean(r.min_knee), "min_thigh": clean(r.min_thigh), "max_lean": clean(r.max_lean),
-            "max_heel": clean(r.max_heel), "seconds": clean(r.seconds),
-            "ml": None if v is None else {
-                "label": v.label, "label_text": both(lambda T: T["classes"][v.label]), "no_feet": v.no_feet,
-                "probs": {k: clean(p) for k, p in v.probs.items()},
-            },
-            "image": thumbnail(video_path, landmarks, r.bottom_frame) if landmarks is not None else None,
-        })
+        item = rep_json(r, v, exercise, texts)
+        item.update(start_s=round(r.start / a.fps, 2), end_s=round(r.end / a.fps, 2),
+                    image=thumbnail(video_path, landmarks, r.bottom_frame) if landmarks is not None else None)
+        reps.append(item)
     # для графика достаточно ~300 точек, иначе ответ получается тяжёлым
     step = max(1, len(a.phases) // 300)
     good = sum(r.good for r in a.reps)
     by_number = {r.number: r for r in a.reps}
     return {
+        "exercise": exercise,
         "summary": {"reps": len(a.reps), "good": good, "bad": len(a.reps) - good,
                     "seconds": round(len(a.phases) / a.fps, 1)},
         "reps": reps,
-        "feedback": [{"t": round(f.frame / a.fps, 1), "level": f.level, "message": feedback_text(f, by_number)} for f in a.feedback],
+        "feedback": [{"t": round(f.frame / a.fps, 1), "level": f.level, "message": feedback_text(f, by_number, texts)}
+                     for f in a.feedback],
         "series": {
             "t": [round(i / a.fps, 2) for i in range(0, len(a.phases), step)],
-            "knee": [clean(x) for x in a.features["knee_angle"][::step]],
+            "knee": [clean(x) for x in a.features[main][::step]],  # главный угол (у приседа — колено)
             "phase": [int(p) for p in a.phases[::step]],
-            "bottoms": [{"t": round(r.bottom_frame / a.fps, 2), "knee": clean(r.min_knee), "n": r.number} for r in a.reps],
+            "bottoms": [{"t": round(r.bottom_frame / a.fps, 2), "knee": clean(bottom_value(r)), "n": r.number} for r in a.reps],
         },
-        "phase_names": both(lambda T: T["phases"]),
+        "phase_names": pick(lambda T: T["phases"]),
         "hmm": {"trans": np.round(squat_hmm(**hmm_params).trans, 3).tolist(),
                 "log_likelihood": round(a.log_likelihood, 1),
                 "per_frame": round(a.log_likelihood / len(a.phases), 2)},
@@ -240,9 +312,11 @@ def to_json(a: Analysis, hmm_params: dict, video_path: Path | None = None, landm
 
 
 @app.post("/api/analyze")
-async def analyze_video(video: UploadFile = File(...), settings: str | None = Form(None), lang: str = Form("ru")):
+async def analyze_video(video: UploadFile = File(...), settings: str | None = Form(None), lang: str = Form("ru"),
+                        exercise: str = Form("squat")):
     lang = check_lang(lang)
-    hmm_params, rules = parse_settings(settings, lang)
+    exercise = check_exercise(exercise, lang)
+    hmm_params, rules = settings_for(exercise, settings, lang)
     suffix = Path(video.filename or "").suffix.lower()
     if suffix not in VIDEO_TYPES:
         raise fail(400, lang, "not_video")
@@ -264,27 +338,50 @@ async def analyze_video(video: UploadFile = File(...), settings: str | None = Fo
             seq = extract_pose(path)
             if seq.detected_ratio < 0.5:
                 raise fail(422, lang, "no_person", ratio=seq.detected_ratio)
-            a = analyze_squat(squat_features(seq), seq.fps, hmm_params, rules,
-                              landmarks=seq.landmarks, classifier=load_classifier())
+            if exercise == "squat":
+                a = analyze_squat(squat_features(seq), seq.fps, hmm_params, rules,
+                                  landmarks=seq.landmarks, classifier=load_classifier())
+            else:
+                spec = EXERCISES[exercise]
+                a = analyze_exercise(spec, exercise_features(spec, seq), seq.fps, hmm_params, rules)
         except (ValueError, FileNotFoundError) as e:
             raise fail(422, lang, "failed", e=e)
-        return to_json(a, hmm_params, path, seq.landmarks)
+        return to_json(a, hmm_params, path, seq.landmarks, exercise)
 
 
 @app.get("/api/demo")
-def demo(errors: str = "shallow,lean", settings: str | None = None, lang: str = "ru"):
+def demo(errors: str = "shallow,lean", settings: str | None = None, lang: str = "ru", exercise: str = "squat"):
     """Демо без видео: синтетический спортсмен делает выбранные ошибки (между ними — правильные повторения)."""
     lang = check_lang(lang)
-    hmm_params, rules = parse_settings(settings, lang)
+    exercise = check_exercise(exercise, lang)
+    hmm_params, rules = settings_for(exercise, settings, lang)
     chosen = [e for e in errors.split(",") if e]
-    unknown = [e for e in chosen if e not in DEMO_SPECS]
+    allowed = DEMO_SPECS if exercise == "squat" else DEMO_ERRORS[exercise]
+    unknown = [e for e in chosen if e not in allowed]
     if unknown:
         raise fail(400, lang, "unknown_errors", names=", ".join(unknown))
+    fps = 30.0
+    if exercise != "squat":
+        spec = EXERCISES[exercise]
+        a = analyze_exercise(spec, demo_session(spec, chosen, fps), fps, hmm_params, rules)
+        return to_json(a, hmm_params, exercise=exercise)
     plan = [syn.GOOD]
     for e in chosen:
         plan += [DEMO_SPECS[e], syn.GOOD]
-    fps = 30.0
     return to_json(analyze_squat(syn.synthetic_session(plan, fps=fps), fps, hmm_params, rules), hmm_params)
+
+
+def exercise_info(spec: ExerciseSpec) -> dict:
+    """Что нужно сайту, чтобы построить настройки и демо упражнения: ползунки, значения по умолчанию, ошибки."""
+    return {
+        "name": {lang: spec.text[lang]["name"] for lang in LANGS},
+        "defaults": {"top_angle": spec.top, "bottom_angle": spec.bottom, "stay_prob": 0.9, **spec.default_rules()},
+        "fields": [{"key": f.key, "min": f.lo, "max": f.hi, "step": f.step, "unit": f.unit,
+                    "label": {lang: spec.text[lang]["fields"][f.key][0] for lang in LANGS},
+                    "help": {lang: spec.text[lang]["fields"][f.key][1] for lang in LANGS}} for f in spec.fields],
+        "errors": {e: {lang: spec.text[lang]["short"][e] for lang in LANGS} for e in DEMO_ERRORS[spec.key]},
+        "phases": {lang: spec.text[lang]["phases"] for lang in LANGS},
+    }
 
 
 @app.get("/api/info")
@@ -297,6 +394,7 @@ def info():
                      "min_rep_seconds": d.min_rep_seconds},
         "errors": ERROR_SHORT,
         "models": None, "retrain": None,
+        "exercises": {key: exercise_info(spec) for key, spec in EXERCISES.items()},
     }
     clf_report, retrain_report = ML_DATA / "classifier_report.json", ML_DATA / "retrain_report.json"
     if clf_report.exists():
@@ -325,10 +423,10 @@ LIVE_ERRORS = {
 }
 
 
-def live_event(f, session: LiveSession) -> dict:
+def live_event(f, session, exercise: str = "squat") -> dict:
     """Подсказка агента для телефона: код (по нему играется голосовая фраза) + текст на двух языках."""
     reps = {r.number: r for r in session.agent.reps}
-    event = {"code": f.code, "level": f.level, "rep": f.rep, "message": feedback_text(f, reps)}
+    event = {"code": f.code, "level": f.level, "rep": f.rep, "message": feedback_text(f, reps, texts_for(exercise))}
     if f.code == "rep" and f.rep in reps:
         event["good"] = reps[f.rep].good
         event["errors"] = reps[f.rep].errors
@@ -352,7 +450,7 @@ def parse_frame(msg: dict):
 @app.websocket("/ws/live")
 async def live(ws: WebSocket):
     await ws.accept()
-    lang, session, hmm_params = "ru", None, None
+    lang, session, hmm_params, exercise = "ru", None, None, "squat"
     try:
         while True:
             try:
@@ -364,16 +462,22 @@ async def live(ws: WebSocket):
             try:
                 if kind == "start":
                     lang = check_lang(msg.get("lang"))
-                    hmm_params, rules = parse_settings(json.dumps(msg.get("settings") or {}), lang)
-                    session = LiveSession(hmm_params, rules)
-                    await ws.send_json({"type": "ready"})
+                    ex = msg.get("exercise") or "squat"
+                    exercise = check_exercise(ex if isinstance(ex, str) else "?", lang)
+                    hmm_params, rules = settings_for(exercise, json.dumps(msg.get("settings") or {}), lang)
+                    if exercise == "squat":
+                        session = LiveSession(hmm_params, rules)
+                    else:
+                        session = ExerciseLiveSession(EXERCISES[exercise], hmm_params, rules)
+                    await ws.send_json({"type": "ready", "exercise": exercise,
+                                        "phase_names": {lang_: texts_for(exercise)[lang_]["phases"] for lang_ in LANGS}})
                 elif kind == "frame" and session is not None:
                     if len(session.times) >= MAX_LIVE_FRAMES:
                         await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["long"]})
                         continue
                     t, pts = parse_frame(msg)
                     out = session.push(t, pts)
-                    out["events"] = [live_event(f, session) for f in out["events"]]
+                    out["events"] = [live_event(f, session, exercise) for f in out["events"]]
                     await ws.send_json({"type": "state", **out})
                 elif kind == "stop" and session is not None:
                     try:
@@ -381,7 +485,7 @@ async def live(ws: WebSocket):
                     except ValueError:
                         await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["short"]})
                     else:
-                        await ws.send_json({"type": "result", "data": to_json(a, hmm_params, None, np.array(session.landmarks))})
+                        await ws.send_json({"type": "result", "data": to_json(a, hmm_params, None, np.array(session.landmarks), exercise)})
                     session = None
                 else:
                     raise ValueError("unknown message")

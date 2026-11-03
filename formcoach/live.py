@@ -23,6 +23,33 @@ FEATURES = ["knee_angle", "hip_angle", "torso_lean", "thigh_angle", "knee_vel", 
 MIN_VISIBILITY = 0.5  # бедро/колено/лодыжка видны хуже — человека на кадре "нет"
 
 
+def hmm_for_step(hmm_params: dict, dt_frame: float):
+    """HMM для одного шага живой камеры с учётом реального времени между кадрами.
+
+    stay_prob задан для 30 кадр/с. Если кадры приходят реже, за один шаг проходит больше времени,
+    и вероятность остаться в фазе должна быть меньше: stay^(30 * dt). Иначе модель "не успевает" за движением.
+    """
+    stay = hmm_params.get("stay_prob", 0.9) ** float(np.clip(30 * dt_frame, 0.5, 10))
+    return squat_hmm(**{**hmm_params, "stay_prob": float(np.clip(stay, 0.05, 0.99))})
+
+
+def next_phase(allowed: np.ndarray, log_alpha: np.ndarray, prev: int | None) -> int:
+    """Фаза на этом кадре: самая вероятная по фильтрации, но меняется только по разрешённым переходам.
+
+    Без ограничения шум мог бы "перепрыгнуть" из НИЗА сразу в ВЕРХ и посчитать лишнее повторение.
+    Но если самая вероятная фаза недостижима за один шаг (человек встал, а модель ещё в СПУСКЕ),
+    идём к ней через промежуточную фазу (СПУСК -> ПОДЪЁМ -> ВЕРХ), а не застреваем на месте.
+    """
+    best = int(np.argmax(log_alpha))
+    if prev is None or allowed[prev, best]:
+        return best
+    bridges = [j for j in range(len(log_alpha)) if j != prev and allowed[prev, j] and allowed[j, best]]
+    if bridges:
+        return max(bridges, key=lambda j: log_alpha[j])
+    return int(np.argmax(np.where(allowed[prev], log_alpha, -np.inf)))
+
+
+
 class LiveSession:
     """Один подход перед камерой. push() вызывается на каждый кадр, summary() — в конце."""
 
@@ -119,11 +146,8 @@ class LiveSession:
         if not person:
             self.phases.append(self.phases[-1] if self.phases else 0)  # человека не видно — фазу не меняем
         else:
-            # stay_prob задан для 30 кадр/с. Если кадры приходят реже, за один шаг проходит больше времени,
-            # и вероятность остаться в фазе должна быть меньше: stay^(30 * dt). Иначе модель "не успевает" за движением.
             dt_frame = self.times[-1] - self.times[-2] if len(self.times) > 1 else 1 / 30
-            stay = self.hmm_params.get("stay_prob", 0.9) ** float(np.clip(30 * dt_frame, 0.5, 10))
-            self.hmm = squat_hmm(**{**self.hmm_params, "stay_prob": float(np.clip(stay, 0.05, 0.99))})
+            self.hmm = hmm_for_step(self.hmm_params, dt_frame)
             self.log_alpha, step_ll = self.hmm.filter_step(self.log_alpha, [knee, vel])
             self.log_likelihood += step_ll
             phase = self._next_phase()
@@ -143,23 +167,7 @@ class LiveSession:
         }
 
     def _next_phase(self) -> int:
-        """Фаза на этом кадре: самая вероятная по фильтрации, но меняется только по разрешённым переходам.
-
-        Без ограничения шум мог бы "перепрыгнуть" из НИЗА сразу в ВЕРХ и посчитать лишнее повторение.
-        Но если самая вероятная фаза недостижима за один шаг (человек встал, а модель ещё в СПУСКЕ),
-        идём к ней через промежуточную фазу (СПУСК -> ПОДЪЁМ -> ВЕРХ), а не застреваем на месте.
-        """
-        best = int(np.argmax(self.log_alpha))
-        if not self.phases:
-            return best
-        prev = self.phases[-1]
-        if self.allowed[prev, best]:
-            return best
-        bridges = [j for j in range(len(self.log_alpha)) if j != prev and self.allowed[prev, j] and self.allowed[j, best]]
-        if bridges:
-            return max(bridges, key=lambda j: self.log_alpha[j])
-        scores = np.where(self.allowed[prev], self.log_alpha, -np.inf)
-        return int(np.argmax(scores))
+        return next_phase(self.allowed, self.log_alpha, self.phases[-1] if self.phases else None)
 
     def summary(self, classifier=None) -> Analysis:
         """Итог подхода в том же виде, что и анализ видео, — сайт показывает его на экране «Нәтиже»."""

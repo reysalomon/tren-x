@@ -60,7 +60,7 @@ def test_websocket_live_protocol():
         ws.send_json({"type": "frame", "t": 0, "lm": None})  # кадр до start — ошибка, но соединение живо
         assert ws.receive_json()["type"] == "error"
         ws.send_json({"type": "start", "lang": "kk", "settings": {"max_torso_lean": 30}})
-        assert ws.receive_json() == {"type": "ready"}
+        assert ws.receive_json()["type"] == "ready"
         codes = []
         for i in range(len(lm)):
             ws.send_json({"type": "frame", "t": i / 30, "lm": None if np.isnan(lm[i, 0, 0]) else lm[i].tolist()})

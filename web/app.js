@@ -10,7 +10,9 @@ const FALLBACK_DEFAULTS = {
 };
 
 let defaults = { ...FALLBACK_DEFAULTS };
-let settings = loadSettings();
+let info = null; // /api/info: значения по умолчанию, упражнения, метрики моделей
+let exercise = loadExercise(); // "squat" | "deadlift"
+let allSettings = loadSettings(); // настройки каждого упражнения отдельно: {squat: {...}, deadlift: {...}}
 let lastResult = null;
 let lastDemo = null; // список ошибок демо — чтобы пересчитать при смене настроек
 let lastSource = "src_video";
@@ -30,10 +32,12 @@ const t = (key, vars = {}) =>
   (STRINGS[lang][key] ?? STRINGS.ru[key] ?? key).replace(/\{(\w+)\}/g, (_, v) => vars[v] ?? "");
 // текст из ответа сервера: {ru: "...", kk: "..."} -> строка на текущем языке
 const tx = (obj) => (obj && typeof obj === "object" ? obj[lang] ?? obj.ru : obj);
+// текст, у которого может быть свой вариант для упражнения: hero_title_deadlift, иначе hero_title
+const tex = (key, vars = {}, ex = exercise) => t(`${key}_${ex}` in STRINGS[lang] ? `${key}_${ex}` : key, vars);
 
 function applyLang() {
   document.documentElement.lang = lang;
-  $$("[data-i18n]").forEach((el) => (el.innerHTML = t(el.dataset.i18n)));
+  $$("[data-i18n]").forEach((el) => (el.innerHTML = el.hasAttribute("data-i18n-ex") ? tex(el.dataset.i18n) : t(el.dataset.i18n)));
   $$("[data-i18n-aria]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
   $$("[data-lang]").forEach((b) => b.classList.toggle("on", b.dataset.lang === lang));
 }
@@ -45,6 +49,7 @@ function setLang(next) {
   } catch { /* не запоминаем */ }
   applyLang();
   buildSettings();
+  buildDemoChips();
   if (lastResult) render(lastResult, lastSource, false); // результат уже есть на двух языках — пересчитывать не нужно
   if ($("#screen-about").classList.contains("active")) renderAbout();
 }
@@ -75,27 +80,74 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 // ---------------- настройки (хранятся в браузере) ----------------
 function loadSettings() {
   try {
-    return JSON.parse(localStorage.getItem("fc-settings")) || {};
+    const saved = JSON.parse(localStorage.getItem("fc-settings")) || {};
+    // старый формат (до становой тяги) — плоский объект настроек приседа
+    return "squat" in saved || "deadlift" in saved ? saved : { squat: saved };
   } catch {
     return {};
   }
 }
 function saveSettings() {
   try {
-    localStorage.setItem("fc-settings", JSON.stringify(settings));
+    localStorage.setItem("fc-settings", JSON.stringify(allSettings));
   } catch { /* приватный режим — просто не запоминаем */ }
 }
-const current = () => ({ ...defaults, ...settings });
+function loadExercise() {
+  try {
+    const saved = localStorage.getItem("fc-exercise");
+    if (saved === "squat" || saved === "deadlift") return saved;
+  } catch { /* приватный режим */ }
+  return "squat";
+}
+const exDefaults = () => (exercise === "squat" ? defaults : info?.exercises?.[exercise]?.defaults ?? {});
+const current = () => ({ ...exDefaults(), ...(allSettings[exercise] ?? {}) });
+
+// ---------------- выбор упражнения ----------------
+function setExercise(next) {
+  exercise = next;
+  try {
+    localStorage.setItem("fc-exercise", exercise);
+  } catch { /* не запоминаем */ }
+  lastDemo = null; // демо другого упражнения пересчитывать не нужно
+  $$("[data-ex]").forEach((b) => b.classList.toggle("on", b.dataset.ex === exercise));
+  applyLang();
+  buildSettings();
+  buildDemoChips();
+}
+$$("[data-ex]").forEach((b) => b.addEventListener("click", () => setExercise(b.dataset.ex)));
+
+// ошибки для демо: у приседа — из i18n.js, у других упражнений — из /api/info
+function buildDemoChips() {
+  const list = exercise === "squat"
+    ? ["shallow", "lean", "heels", "fast"].map((k) => [k, t(`err_${k}`)])
+    : Object.entries(info?.exercises?.[exercise]?.errors ?? {}).map(([k, label]) => [k, tx(label)]);
+  $("#demo-chips").innerHTML = list.map(([k, label], i) =>
+    `<button class="chip ${i < 2 ? "on" : ""}" data-err="${k}" aria-pressed="${i < 2}">${esc(label)}</button>`).join("");
+  $$("#demo-chips .chip").forEach((c) =>
+    c.addEventListener("click", () => {
+      c.classList.toggle("on");
+      c.setAttribute("aria-pressed", c.classList.contains("on"));
+    }),
+  );
+}
 
 function buildSettings() {
   const values = current();
-  $$(".field").forEach((f) => {
+  // правила приседа заданы в index.html, правила других упражнений приходят с сервера (/api/info)
+  $("#rules-squat").hidden = exercise !== "squat";
+  const fields = exercise === "squat" ? [] : info?.exercises?.[exercise]?.fields ?? [];
+  $("#rules-ex").innerHTML = fields.map((f) =>
+    `<div class="field" data-key="${f.key}" data-min="${f.min}" data-max="${f.max}" data-step="${f.step}" data-unit="${f.unit}"></div>`).join("");
+  $$(".field").filter((f) => !f.closest("[hidden]")).forEach((f) => {
     const { key, min, max, step, label, help } = f.dataset;
+    const server = fields.find((x) => x.key === key);
+    const labelText = server ? esc(tx(server.label)) : tex(label);
+    const helpText = server ? esc(tx(server.help)) : help ? t(help) : "";
     const unit = f.dataset.unit === " s" ? ` ${t("sec")}` : f.dataset.unit;
     const id = `set-${key}`;
     f.innerHTML = `
-      <div class="field-row"><label for="${id}">${t(label)}</label><output id="${id}-out"></output></div>
-      ${help ? `<p class="help">${t(help)}</p>` : ""}
+      <div class="field-row"><label for="${id}">${labelText}</label><output id="${id}-out"></output></div>
+      ${helpText ? `<p class="help">${helpText}</p>` : ""}
       <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${values[key]}">`;
     const input = f.querySelector("input");
     const out = f.querySelector("output");
@@ -103,14 +155,14 @@ function buildSettings() {
     show();
     input.addEventListener("input", show);
     input.addEventListener("change", () => {
-      settings[key] = +input.value;
+      (allSettings[exercise] ??= {})[key] = +input.value;
       saveSettings();
       if (lastDemo !== null) runDemo(lastDemo, false);
     });
   });
 }
 $("#btn-reset").addEventListener("click", () => {
-  settings = {};
+  allSettings[exercise] = {};
   saveSettings();
   buildSettings();
   if (lastDemo !== null) runDemo(lastDemo, false);
@@ -144,6 +196,7 @@ function uploadVideo(file) {
   form.append("video", file, name);
   form.append("settings", JSON.stringify(current()));
   form.append("lang", lang);
+  form.append("exercise", exercise);
 
   const xhr = new XMLHttpRequest(); // XHR, а не fetch: у него есть прогресс отправки
   xhr.open("POST", "/api/analyze");
@@ -187,18 +240,12 @@ function uploadVideo(file) {
 );
 
 // ---------------- демо ----------------
-$$("#demo-chips .chip").forEach((c) =>
-  c.addEventListener("click", () => {
-    c.classList.toggle("on");
-    c.setAttribute("aria-pressed", c.classList.contains("on"));
-  }),
-);
 $("#btn-demo").addEventListener("click", () => {
   runDemo($$("#demo-chips .chip.on").map((c) => c.dataset.err), true);
 });
 
 async function runDemo(errors, navigate) {
-  const q = new URLSearchParams({ errors: errors.join(","), settings: JSON.stringify(current()), lang });
+  const q = new URLSearchParams({ errors: errors.join(","), settings: JSON.stringify(current()), lang, exercise });
   try {
     const res = await fetch(`/api/demo?${q}`);
     const data = await res.json();
@@ -237,7 +284,8 @@ function render(data, source, navigate = true) {
   renderReps(data.reps);
   renderChart(data);
   renderFeedback(data.feedback);
-  $("#ml-note").textContent = t(data.has_ml ? "ml_note" : "ml_demo");
+  $("#ml-note").textContent = t(data.has_ml ? "ml_note" : (data.exercise ?? "squat") !== "squat" ? "ml_none_ex" : "ml_demo");
+  $("#chart-title").innerHTML = tex("chart_title", {}, data.exercise ?? "squat");
   if (navigate) go("result");
 }
 
@@ -261,31 +309,35 @@ function renderReps(reps) {
     box.innerHTML = `<div class="card muted">${t("reps_none")}</div>`;
     return;
   }
-  const rules = current();
+  const rules = { ...defaults, ...(allSettings.squat ?? {}) }; // порог глубины показываем только у приседа
   box.innerHTML = reps.map((r) => {
     const keys = r.errors.map((e) => e.key);
     const verdict = r.good
       ? `<span class="verdict ok">${t("verdict_ok")}</span>`
       : `<span class="verdict bad">${r.errors.map((e) => esc(tx(e.short))).join(" · ")}</span>`;
-    const heel = r.max_heel === null ? "—" : r.max_heel.toFixed(2);
+    const heel = r.max_heel == null ? "—" : r.max_heel.toFixed(2);
     let ml = "";
     if (r.ml) {
       const p = r.ml.probs[r.ml.label];
       ml = `<div class="ml-line">ML: <b>${esc(tx(r.ml.label_text))}</b> ${Math.round(p * 100)}%${r.ml.no_feet ? ` · ${t("no_feet")}` : ""}
         <div class="prob ${r.ml.label === "good" ? "" : "bad"}"><i style="width:${p * 100}%"></i></div></div>`;
     }
-    return `<article class="rep ${r.good ? "" : "bad"}">
-      <div class="rep-img">${r.image ? `<img src="${r.image}" alt="${t("img_alt", { n: r.number })}">` : SILHOUETTE}</div>
-      <div class="rep-body">
-        <div class="rep-head"><span class="rep-num">#${r.number}</span>${verdict}</div>
-        <div class="metrics">
-          <span class="${keys.includes("shallow") ? "over" : ""}">${t("m_thigh")} <b>${Math.round(r.min_thigh)}°</b></span>
+    const metrics = r.metrics
+      ? r.metrics.map((m) => {
+          const v = m.value === null ? "—" : m.unit === "°" ? `${Math.round(m.value)}°` : m.value.toFixed(2);
+          return `<span class="${m.over ? "over" : ""}">${esc(tx(m.label))} <b>${v}</b></span>`;
+        }).join("") + `<span class="${keys.includes("fast") ? "over" : ""}">${t("m_time")} <b>${r.seconds.toFixed(1)} ${t("sec")}</b></span>`
+      : `<span class="${keys.includes("shallow") ? "over" : ""}">${t("m_thigh")} <b>${Math.round(r.min_thigh)}°</b></span>
           <span>${t("m_knee")} <b>${Math.round(r.min_knee)}°</b></span>
           <span class="${keys.includes("lean") ? "over" : ""}">${t("m_lean")} <b>${Math.round(r.max_lean)}°</b></span>
           <span class="${keys.includes("heels") ? "over" : ""}">${t("m_heel")} <b>${heel}</b></span>
           <span class="${keys.includes("fast") ? "over" : ""}">${t("m_time")} <b>${r.seconds.toFixed(1)} ${t("sec")}</b></span>
-          <span>${t("m_depth")} <b>${rules.max_thigh_angle}°</b></span>
-        </div>
+          <span>${t("m_depth")} <b>${rules.max_thigh_angle}°</b></span>`;
+    return `<article class="rep ${r.good ? "" : "bad"}">
+      <div class="rep-img">${r.image ? `<img src="${r.image}" alt="${t("img_alt", { n: r.number })}">` : SILHOUETTE}</div>
+      <div class="rep-body">
+        <div class="rep-head"><span class="rep-num">#${r.number}</span>${verdict}</div>
+        <div class="metrics">${metrics}</div>
         ${ml}
       </div>
     </article>`;
@@ -353,7 +405,6 @@ function renderFeedback(items) {
 }
 
 // ---------------- «Как это работает» ----------------
-let info = null;
 async function renderAbout() {
   try {
     info ??= await (await fetch("/api/info")).json();
@@ -371,7 +422,7 @@ async function renderAbout() {
   let phaseNames = lastResult?.phase_names;
   if (!trans) {
     try {
-      const q = new URLSearchParams({ errors: "", settings: JSON.stringify(current()), lang });
+      const q = new URLSearchParams({ errors: "", settings: JSON.stringify(current()), lang, exercise });
       const demo = await (await fetch(`/api/demo?${q}`)).json();
       trans = demo.hmm.trans;
       phaseNames = demo.phase_names;
@@ -393,7 +444,8 @@ async function init() {
     info = await res.json();
     defaults = { ...FALLBACK_DEFAULTS, ...info.defaults };
   } catch { /* сервер недоступен — покажем ошибку при первом действии */ }
-  buildSettings();
+  if (exercise !== "squat" && !info?.exercises?.[exercise]) exercise = "squat"; // старый сервер без упражнения
+  setExercise(exercise);
 }
 applyLang();
 init();

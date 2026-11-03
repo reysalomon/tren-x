@@ -17,6 +17,8 @@ MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "pose_landmarke
 
 # Номера нужных нам точек в модели MediaPipe Pose (всего их 33)
 L_SHOULDER, R_SHOULDER = 11, 12
+L_ELBOW, R_ELBOW = 13, 14
+L_WRIST, R_WRIST = 15, 16
 L_HIP, R_HIP = 23, 24
 L_KNEE, R_KNEE = 25, 26
 L_ANKLE, R_ANKLE = 27, 28
