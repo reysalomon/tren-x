@@ -1,0 +1,128 @@
+{
+  "deadlift": {
+    "sessions": 200,
+    "count": {
+      "hmm": {
+        "exact": 1.0,
+        "mae": 0.0
+      },
+      "threshold": {
+        "exact": 1.0,
+        "mae": 0.0
+      }
+    },
+    "errors": {
+      "bar_far": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 120
+      },
+      "lean_back": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 117
+      },
+      "squat_it": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 132
+      },
+      "stiff_legs": {
+        "precision": 1.0,
+        "recall": 0.9932432432432432,
+        "f1": 0.9966101694915254,
+        "support": 148
+      },
+      "fast": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 125
+      }
+    },
+    "analysis_ms_per_session": 24.31766857999264
+  },
+  "pushup": {
+    "sessions": 200,
+    "count": {
+      "hmm": {
+        "exact": 1.0,
+        "mae": 0.0
+      },
+      "threshold": {
+        "exact": 0.73,
+        "mae": 0.3
+      }
+    },
+    "errors": {
+      "shallow": {
+        "precision": 0.9621621621621622,
+        "recall": 1.0,
+        "f1": 0.9807162534435263,
+        "support": 178
+      },
+      "sag": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 169
+      },
+      "pike": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 162
+      },
+      "fast": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 145
+      }
+    },
+    "analysis_ms_per_session": 17.890086084992163
+  },
+  "pullup": {
+    "sessions": 200,
+    "count": {
+      "hmm": {
+        "exact": 1.0,
+        "mae": 0.0
+      },
+      "threshold": {
+        "exact": 1.0,
+        "mae": 0.0
+      }
+    },
+    "errors": {
+      "chin_low": {
+        "precision": 0.9101123595505618,
+        "recall": 1.0,
+        "f1": 0.9529411764705883,
+        "support": 162
+      },
+      "no_hang": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 149
+      },
+      "swing": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 174
+      },
+      "fast": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 163
+      }
+    },
+    "analysis_ms_per_session": 21.25690582000061
+  }
+}
