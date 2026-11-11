@@ -67,6 +67,7 @@ svg { fill: currentColor; }
 .lang-switch-big button { flex: 1; font-size: 15px; padding: 10px; }
 .ex-pick { margin: 18px 0 0; }
 .ex-pick .lang-switch-big { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; border-radius: 18px; }
+.ex-pick .lang-switch-big button:last-child:nth-child(odd) { grid-column: 1 / -1; } /* нечётная последняя кнопка — на всю ширину */
 .ex-pick button { font-size: 14px; padding: 10px 6px; line-height: 1.2; border-radius: 15px; }
 
 /* ---------- главная ---------- */

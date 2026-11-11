@@ -11,7 +11,7 @@ const FALLBACK_DEFAULTS = {
 
 let defaults = { ...FALLBACK_DEFAULTS };
 let info = null; // /api/info: значения по умолчанию, упражнения, метрики моделей
-const EXERCISES = ["squat", "deadlift", "pushup", "pullup"];
+const EXERCISES = ["squat", "deadlift", "pushup", "pullup", "handstand"];
 let exercise = loadExercise();
 let allSettings = loadSettings(); // настройки каждого упражнения отдельно: {squat: {...}, deadlift: {...}}
 let lastResult = null;
@@ -139,7 +139,11 @@ function buildSettings() {
   const fields = exercise === "squat" ? [] : info?.exercises?.[exercise]?.fields ?? [];
   $("#rules-ex").innerHTML = fields.map((f) =>
     `<div class="field" data-key="${f.key}" data-min="${f.min}" data-max="${f.max}" data-step="${f.step}" data-unit="${f.unit}"></div>`).join("");
+  // пределы ползунков углов HMM: у стойки на руках угол "внизу" около 0°, у остальных 50–130°
+  const ranges = exercise === "squat" ? {} : info?.exercises?.[exercise]?.ranges ?? {};
   $$(".field").filter((f) => !f.closest("[hidden]")).forEach((f) => {
+    if (!f.dataset.min0) Object.assign(f.dataset, { min0: f.dataset.min, max0: f.dataset.max }); // исходные из index.html
+    [f.dataset.min, f.dataset.max] = ranges[f.dataset.key] ?? [f.dataset.min0, f.dataset.max0];
     const { key, min, max, step, label, help } = f.dataset;
     const server = fields.find((x) => x.key === key);
     const labelText = server ? esc(tx(server.label)) : tex(label);
@@ -325,7 +329,8 @@ function renderReps(reps) {
     }
     const metrics = r.metrics
       ? r.metrics.map((m) => {
-          const v = m.value === null ? "—" : m.unit === "°" ? `${Math.round(m.value)}°` : m.value.toFixed(2);
+          const v = m.value === null ? "—" : m.unit === "°" ? `${Math.round(m.value)}°`
+            : m.unit === "s" ? `${m.value.toFixed(1)} ${t("sec")}` : m.value.toFixed(2);
           return `<span class="${m.over ? "over" : ""}">${esc(tx(m.label))} <b>${v}</b></span>`;
         }).join("") + `<span class="${keys.includes("fast") ? "over" : ""}">${t("m_time")} <b>${r.seconds.toFixed(1)} ${t("sec")}</b></span>`
       : `<span class="${keys.includes("shallow") ? "over" : ""}">${t("m_thigh")} <b>${Math.round(r.min_thigh)}°</b></span>

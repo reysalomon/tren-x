@@ -1,4 +1,4 @@
-"""Другие упражнения (становая тяга, отжимания, подтягивания) на тех же AI-темах, что и приседания.
+"""Другие упражнения (становая тяга, отжимания, подтягивания, стойка на руках) на тех же AI-темах, что и приседания.
 
 Цепочка та же, меняется только "что измерять":
   точки тела -> признаки упражнения -> HMM по ГЛАВНОМУ углу (неделя 7: ВЕРХ/ОПУСКАНИЕ/НИЗ/ПОДЪЁМ)
@@ -7,6 +7,9 @@
 Упражнение описывается данными (ExerciseSpec): главный угол, параметры HMM, список проверок
 "признак за повторение больше/меньше порога -> ошибка" и тексты на двух языках. Новое упражнение —
 это новое описание + функция признаков одного кадра; HMM, агент и живой режим общие.
+
+Стойка на руках — упражнение на удержание: одна "попытка" = вышел в стойку -> держит -> вернулся на ноги.
+Для HMM это то же самое, что повторение: ВЕРХ = стоит на ногах, НИЗ = стоит на руках (spec.hold=True).
 
 Приседания остаются в agent.py/live.py: у них есть классификатор (неделя 8) и особые правила (ходьба).
 """
@@ -19,7 +22,7 @@ import numpy as np
 from . import pose as P
 from .agent import Feedback
 from .features import FOOT_MIN_VISIBILITY, joint_angle, lean_from_vertical, smooth
-from .hmm import TOP, squat_hmm
+from .hmm import BOTTOM, TOP, squat_hmm
 from .live import MIN_VISIBILITY, hmm_for_step, next_phase
 from .pipeline import Analysis
 
@@ -75,6 +78,9 @@ class ExerciseSpec:
     required: tuple[str, ...]  # точки, которые должны быть видны (имена из SIDES)
     metrics: tuple[tuple[str, str, str], ...]  # (признак, agg, единица) — что показать в карточке повторения
     text: dict  # тексты на двух языках
+    hold: bool = False  # упражнение на удержание: ошибки и время считаем только в фазе НИЗ (стойка)
+    top_range: tuple[float, float] = (140.0, 180.0)  # пределы ползунков HMM "угол вверху" / "угол внизу"
+    bottom_range: tuple[float, float] = (50.0, 130.0)
 
     def default_rules(self) -> dict[str, float]:
         return {f.key: f.default for f in self.fields}
@@ -381,7 +387,121 @@ PULLUP = ExerciseSpec(
     },
 )
 
-EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP, "pullup": PULLUP}
+# ---------------- стойка на руках (удержание) ----------------
+
+
+def handstand_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
+    """Признаки стойки на руках на одном кадре (камера сбоку).
+
+    stand_angle    — угол тела к вертикали "вниз": 180 — стоит на ногах, 0 — ровно вверх ногами. Главный угол.
+                     Считается по линии плечо -> лодыжка (лодыжку не видно — плечо -> колено).
+    body_bend      — насколько тело не прямое: 180 - угол плечо-таз-колено ("банан" или согнутый таз).
+                     Берём колено, а не лодыжку, чтобы согнутые колени не считались "бананом".
+    elbow_angle    — угол в локте: в стойке руки прямые, ~175.
+    shoulder_angle — угол локоть-плечо-таз: в правильной стойке плечи открыты, ~170-180.
+    knee_angle     — угол колена: ноги должны быть прямые.
+    """
+    s = SIDES[side]
+    xy = pts[:, :2]
+    foot = s["ankle"] if pts[s["ankle"], 3] >= MIN_VISIBILITY else s["knee"]
+    body = xy[foot] - xy[s["sh"]]
+    # угол между "плечо -> ноги" и направлением вниз (ось y в картинке направлена вниз)
+    down_angle = float(np.degrees(np.arccos(np.clip(body[1] / max(np.linalg.norm(body), 1e-6), -1, 1))))
+    knee_ok = pts[s["ankle"], 3] >= MIN_VISIBILITY
+    return {
+        "stand_angle": 180.0 - down_angle,
+        "body_bend": 180.0 - float(joint_angle(xy[s["sh"]], xy[s["hip"]], xy[s["knee"]])),
+        "elbow_angle": float(joint_angle(xy[s["sh"]], xy[s["el"]], xy[s["wr"]])),
+        "shoulder_angle": float(joint_angle(xy[s["el"]], xy[s["sh"]], xy[s["hip"]])),
+        "knee_angle": float(joint_angle(xy[s["hip"]], xy[s["knee"]], xy[s["ankle"]])) if knee_ok else np.nan,
+    }
+
+
+HANDSTAND = ExerciseSpec(
+    key="handstand",
+    main="stand_angle",
+    top=175.0,
+    bottom=8.0,
+    speed=150.0,  # выход в стойку и спуск быстрые: ~1 с на 170 градусов
+    min_dip=90.0,  # тело должно хотя бы лечь горизонтально — иначе это не попытка
+    checks=(
+        Check("bent_arms", "elbow_angle", "min", "<", "min_elbow_angle", live=True),
+        Check("banana", "body_bend", "max", ">", "max_body_bend", live=True),
+        Check("closed_shoulders", "shoulder_angle", "min", "<", "min_shoulder_angle", live=True),
+        Check("bent_knees", "knee_angle", "min", "<", "min_knee_angle", live=True),
+        Check("short_hold", "hold_seconds", "max", "<", "min_hold_seconds"),
+    ),
+    fields=(
+        Field("min_hold_seconds", 3.0, 1.0, 30.0, 0.5, " s"),
+        Field("min_elbow_angle", 155.0, 130.0, 180.0, 1.0, "°"),
+        Field("max_body_bend", 20.0, 5.0, 45.0, 1.0, "°"),
+        Field("min_shoulder_angle", 150.0, 120.0, 180.0, 1.0, "°"),
+        Field("min_knee_angle", 155.0, 120.0, 180.0, 1.0, "°"),
+    ),
+    values=handstand_values,
+    facing_vote=lambda pts, side: 0.0,  # направление взгляда не нужно
+    required=("sh", "hip", "knee"),
+    metrics=(("hold_seconds", "max", "s"), ("body_bend", "max", "°"), ("elbow_angle", "min", "°"),
+             ("shoulder_angle", "min", "°"), ("knee_angle", "min", "°")),
+    hold=True,
+    bottom_range=(0.0, 40.0),
+    text={
+        "ru": {
+            "name": "Стойка на руках",
+            "phases": ["НА НОГАХ", "ВЫХОД", "СТОЙКА", "СПУСК"],
+            "rep_ok": "Попытка {n}: отлично!",
+            "rep_bad": "Попытка {n}: {text}",
+            "error": {
+                "bent_arms": "Руки согнуты — выпрями локти и толкай пол",
+                "banana": "Тело не прямое — сожми пресс и ягодицы, убери прогиб",
+                "closed_shoulders": "Плечи закрыты — тянись плечами к ушам",
+                "bent_knees": "Колени согнуты — выпрями ноги и тяни носки",
+                "short_hold": "Слишком короткое удержание — держи стойку дольше",
+            },
+            "short": {"bent_arms": "согнутые руки", "banana": "банан", "closed_shoulders": "закрытые плечи",
+                      "bent_knees": "согнутые колени", "short_hold": "короткое удержание"},
+            "live": {"bent_arms": "Выпрями руки", "banana": "Убери прогиб", "closed_shoulders": "Открой плечи",
+                     "bent_knees": "Выпрями ноги"},
+            "metric": {"hold_seconds": "Удержание", "body_bend": "Изгиб тела", "elbow_angle": "Локоть",
+                       "shoulder_angle": "Плечо", "knee_angle": "Колено"},
+            "fields": {
+                "min_hold_seconds": ("Мин. время удержания", "Короче — попытка с ошибкой «короткое удержание»."),
+                "min_elbow_angle": ("Угол локтя, мин.", "Меньше — руки согнуты."),
+                "max_body_bend": ("Изгиб тела, макс.", "Насколько линия плечо–таз–колено может быть не прямой."),
+                "min_shoulder_angle": ("Угол в плече, мин.", "Угол локоть–плечо–таз: меньше — плечи закрыты."),
+                "min_knee_angle": ("Угол колена, мин.", "Меньше — ноги согнуты."),
+            },
+        },
+        "kk": {
+            "name": "Қолмен тұру",
+            "phases": ["АЯҚТА", "ШЫҒУ", "ТІРЕК", "ТҮСУ"],
+            "rep_ok": "{n}-әрекет: керемет!",
+            "rep_bad": "{n}-әрекет: {text}",
+            "error": {
+                "bent_arms": "Қол бүгілген — шынтақты түзе, еденді итер",
+                "banana": "Дене түзу емес — іш пен бөксені қыс, майыспа",
+                "closed_shoulders": "Иық жабық — иықты құлаққа қарай соз",
+                "bent_knees": "Тізе бүгілген — аяқты түзе, саусақты соз",
+                "short_hold": "Тым қысқа ұстадың — тұруды ұзағырақ ұста",
+            },
+            "short": {"bent_arms": "бүгілген қол", "banana": "банан", "closed_shoulders": "жабық иық",
+                      "bent_knees": "бүгілген тізе", "short_hold": "қысқа ұстау"},
+            "live": {"bent_arms": "Қолды түзе", "banana": "Майыспа", "closed_shoulders": "Иықты аш",
+                     "bent_knees": "Аяқты түзе"},
+            "metric": {"hold_seconds": "Ұстау", "body_bend": "Дене иілуі", "elbow_angle": "Шынтақ",
+                       "shoulder_angle": "Иық", "knee_angle": "Тізе"},
+            "fields": {
+                "min_hold_seconds": ("Ұстаудың ең аз уақыты", "Қысқа болса — «қысқа ұстау» қатесі."),
+                "min_elbow_angle": ("Шынтақ бұрышы, ең аз", "Аз болса — қол бүгілген."),
+                "max_body_bend": ("Дене иілуі, ең көп", "Иық–жамбас–тізе сызығы қаншалықты қисық бола алады."),
+                "min_shoulder_angle": ("Иық бұрышы, ең аз", "Шынтақ–иық–жамбас бұрышы: аз болса — иық жабық."),
+                "min_knee_angle": ("Тізе бұрышы, ең аз", "Аз болса — аяқ бүгілген."),
+            },
+        },
+    },
+)
+
+EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP, "pullup": PULLUP, "handstand": HANDSTAND}
 
 
 def get_exercise(key: str) -> ExerciseSpec:
@@ -432,16 +552,37 @@ class ExerciseCoachAgent:
         self._warned: set[str] = set()
         self._last_end = -10**9  # кадр конца последнего повторения
         names = {spec.main} | {c.feature for c in spec.checks} | {m[0] for m in spec.metrics}
-        self._tracked = sorted(names - {"main_start"})  # main_start — не признак кадра, его помнит агент
+        # main_start и hold_seconds — не признаки кадра, их считает сам агент
+        self._tracked = sorted(names - {"main_start", "hold_seconds"})
 
     def _start_rep(self, frame: int, v: dict):
         self._in_rep, self._start, self._warned, self._agg = True, frame, set(), {}
         self._bottom_frame, self._min_main = frame, v[self.spec.main]
-        self._update(frame, v)
+        self._hold_frames = 0  # сколько кадров подряд в фазе НИЗ (для упражнений на удержание)
+        self._update(frame, v, TOP)
 
-    def _update(self, frame: int, v: dict):
+    HOLD_GRACE_SEC = 0.3  # первые доли секунды в стойке тело ещё выравнивается после маха — не ругаем
+    HOLD_MAX_TILT = 30.0  # и оцениваем, только когда тело почти вертикально (главный угол <= "внизу" + 30)
+    HOLD_MAX_SPEED = 45.0  # и почти неподвижно, град/с: в начале спуска колени сгибаются — это не ошибка
+
+    def _judged(self, phase: int, v: dict) -> bool:
+        """Оценивать ли этот кадр. Для повторений — всегда. Для удержания — только когда человек
+        уже стоит в стойке (фаза НИЗ) дольше HOLD_GRACE_SEC, почти вертикально и не двигается:
+        мах и спуск не оцениваем."""
+        if not self.spec.hold:
+            return True
+        return (phase == BOTTOM and self._hold_frames / self.fps > self.HOLD_GRACE_SEC
+                and v[self.spec.main] <= self.spec.bottom + self.HOLD_MAX_TILT
+                and abs(v.get("main_vel", 0.0)) <= self.HOLD_MAX_SPEED)
+
+    def _update(self, frame: int, v: dict, phase: int):
         if v[self.spec.main] < self._min_main:
             self._min_main, self._bottom_frame = v[self.spec.main], frame
+        if self.spec.hold:
+            self._hold_frames = self._hold_frames + 1 if phase == BOTTOM else 0
+            self._agg["hold_seconds:max"] = max(self._agg.get("hold_seconds:max", 0.0), self._hold_frames / self.fps)
+            if not self._judged(phase, v):
+                return
         for name in self._tracked:
             x = v.get(name, np.nan)
             self._agg[f"{name}:min"] = np.fmin(self._agg.get(f"{name}:min", np.nan), x)  # fmin/fmax пропускают NaN
@@ -473,8 +614,10 @@ class ExerciseCoachAgent:
                 self._start_rep(frame, v)
             return actions
 
-        self._update(frame, v)
+        self._update(frame, v, phase)
         for c in self.spec.checks:
+            if not self._judged(phase, v):
+                break
             if c.live and c.code not in self._warned and c.broken(v.get(c.feature, np.nan), self.rules[c.rule]):
                 self._warned.add(c.code)
                 actions.append(Feedback(frame, "warn", self.spec.text["ru"]["live"][c.code], len(self.reps) + 1, c.code))
@@ -495,13 +638,15 @@ class ExerciseCoachAgent:
         rep = ExerciseRep(len(self.reps) + 1, self._start, end, self._bottom_frame, (end - self._start) / self.fps, values)
         rep.errors = [c.code for c in self.spec.checks
                       if c.broken(values.get(f"{c.feature}:{c.agg}", np.nan), self.rules[c.rule])]
-        if rep.seconds < self.rules["min_rep_seconds"]:
+        if "min_rep_seconds" in self.rules and rep.seconds < self.rules["min_rep_seconds"]:  # у удержания этого правила нет
             rep.errors.append("fast")
         self.reps.append(rep)
+        ru = self.spec.text["ru"]
         if rep.good:
-            return Feedback(end, "ok", f"Повторение {rep.number}: отлично!", rep.number, "rep")
-        text = "; ".join(self.spec.text["ru"]["error"][e] for e in rep.errors)
-        return Feedback(end, "warn", f"Повторение {rep.number}: {text}", rep.number, "rep")
+            return Feedback(end, "ok", ru.get("rep_ok", "Повторение {n}: отлично!").format(n=rep.number), rep.number, "rep")
+        text = "; ".join(ru["error"][e] for e in rep.errors)
+        return Feedback(end, "warn", ru.get("rep_bad", "Повторение {n}: {text}").format(n=rep.number, text=text),
+                        rep.number, "rep")
 
 
 # ---------------- анализ целого видео ----------------
@@ -779,11 +924,52 @@ def pullup_synthetic(reps: list[PullupRep], fps: float = 30.0, pause_sec: float 
     return feats
 
 
+@dataclass
+class HandstandRep:
+    hold: float = 6.0  # сколько секунд держит стойку
+    elbow: float = 176.0
+    bend: float = 6.0  # изгиб тела в стойке
+    shoulder: float = 172.0
+    knee: float = 176.0
+
+
+HANDSTAND_DEMO = {
+    "bent_arms": HandstandRep(elbow=135.0),
+    "banana": HandstandRep(bend=32.0),
+    "closed_shoulders": HandstandRep(shoulder=135.0),
+    "bent_knees": HandstandRep(knee=130.0),
+    "short_hold": HandstandRep(hold=1.2),
+}
+
+
+def handstand_synthetic(reps: list[HandstandRep], fps: float = 30.0, pause_sec: float = 1.5, noise: float = 1.5,
+                        seed: int = 0) -> dict[str, np.ndarray]:
+    """Синтетическая стойка на руках: стоит -> мах в стойку (0.8 с) -> держит r.hold с -> спуск (0.8 с)."""
+    rng = np.random.default_rng(seed)
+    n_pause, n_move = int(pause_sec * fps), int(0.8 * fps)
+    stand = {"stand_angle": 175.0, "body_bend": 3.0, "elbow_angle": 175.0, "shoulder_angle": 20.0, "knee_angle": 175.0}
+    parts = {k: [np.full(n_pause, v)] for k, v in stand.items()}
+    for r in reps:
+        up = (1 - np.cos(np.linspace(0, np.pi, n_move))) / 2  # 0 -> 1 плавно
+        hold = {"stand_angle": 6.0, "body_bend": r.bend, "elbow_angle": r.elbow, "shoulder_angle": r.shoulder,
+                "knee_angle": r.knee}
+        # во время маха нога согнута, тело сложено — это нормально, агент это не оценивает
+        swing = {"body_bend": 60 * np.sin(np.pi * up), "knee_angle": -60 * np.sin(np.pi * up)}
+        for k in stand:
+            a, b = stand[k], hold[k]
+            parts[k] += [a + (b - a) * up + swing.get(k, 0), np.full(int(r.hold * fps), b),
+                         b + (a - b) * up + swing.get(k, 0), np.full(n_pause, a)]
+    feats = {k: smooth(np.concatenate(c) + rng.normal(0, noise, sum(map(len, c))), 5) for k, c in parts.items()}
+    feats["main_vel"] = np.gradient(feats["stand_angle"]) * fps
+    return feats
+
+
 # для каждого упражнения: (ошибки демо -> параметры повторения, правильное повторение, генератор)
 DEMOS = {
     "deadlift": (DEADLIFT_DEMO, DeadliftRep, deadlift_synthetic),
     "pushup": (PUSHUP_DEMO, PushupRep, pushup_synthetic),
     "pullup": (PULLUP_DEMO, PullupRep, pullup_synthetic),
+    "handstand": (HANDSTAND_DEMO, HandstandRep, handstand_synthetic),
 }
 DEMO_ERRORS = {key: list(d[0]) for key, d in DEMOS.items()}
 

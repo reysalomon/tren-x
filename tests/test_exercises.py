@@ -284,3 +284,93 @@ def test_pullup_demo_and_server(error):
     data = r.json()
     assert [[e["key"] for e in rep["errors"]] for rep in data["reps"]] == [[], [error], []]
     assert data["phase_names"]["ru"][0] == "ВИС"
+
+
+# ---------------- стойка на руках ----------------
+from formcoach.exercises import HANDSTAND, HANDSTAND_DEMO, handstand_values  # noqa: E402
+
+
+def rot(v, deg):
+    a = np.radians(deg)
+    return np.array([v[0] * np.cos(a) - v[1] * np.sin(a), v[0] * np.sin(a) + v[1] * np.cos(a)])
+
+
+def handstand_skeleton(turn: float, elbow: float = 176, bend: float = 4, shoulder: float = 172,
+                       knee: float = 176) -> np.ndarray:
+    """Человек сбоку с поднятыми руками, повёрнутый на turn градусов (0 — стоит на ногах, 180 — на руках).
+    Сначала строим тело в обычных координатах (y вверх, плечо в нуле), потом поворачиваем и переводим в пиксели."""
+    down = np.array([0.0, -1.0])
+    hip = 120 * down
+    knee_pt = hip + 100 * rot(down, bend)
+    ankle = knee_pt + 100 * rot(down, bend + (180 - knee))
+    el = 70 * rot(down, shoulder)  # угол локоть-плечо-таз = shoulder
+    wr = el + 70 * rot(el / 70, -(180 - elbow))
+    pts = np.zeros((33, 4))
+    pts[:, 3] = 0.95
+    to_px = lambda v: np.array([400, 400]) + rot(v, turn) * [1, -1]  # noqa: E731  (y в картинке вниз)
+    for side in ("L", "R"):
+        g = lambda name: getattr(P, f"{side}_{name}")  # noqa: E731
+        for name, xy in [("SHOULDER", np.zeros(2)), ("ELBOW", el), ("WRIST", wr), ("HIP", hip), ("KNEE", knee_pt),
+                         ("ANKLE", ankle), ("HEEL", ankle), ("FOOT", ankle + [10, 0])]:
+            pts[g(name), :2] = to_px(xy)
+    return pts
+
+
+def handstand_session(attempts: int = 3, bad: dict | None = None, hold: float = 4.0, fps: float = 30.0) -> np.ndarray:
+    """Стоит 1 с, потом attempts попыток: мах 0.8 с (нога согнута) -> стойка hold с -> спуск 0.8 с -> стоит 1 с.
+    bad — вторая попытка: {"elbow": ...}, {"bend": ...}, {"shoulder": ...}, {"knee": ...}, {"hold": секунды}."""
+    frames = [handstand_skeleton(0)] * int(fps)
+    move = (1 - np.cos(np.linspace(0, np.pi, int(0.8 * fps)))) / 2
+    for i in range(attempts):
+        extra = dict(bad) if (bad and i == 1) else {}
+        secs = extra.pop("hold", hold)
+        frames += [handstand_skeleton(178 * k, knee=176 - 70 * np.sin(np.pi * k)) for k in move]
+        frames += [handstand_skeleton(178, **extra)] * int(secs * fps)
+        frames += [handstand_skeleton(178 * (1 - k), knee=176 - 70 * np.sin(np.pi * k)) for k in move]
+        frames += [handstand_skeleton(0)] * int(fps)
+    return np.array(frames)
+
+
+def handstand_video(lm: np.ndarray):
+    return analyze_exercise(HANDSTAND, exercise_features(HANDSTAND, P.PoseSequence(lm, 30.0)), 30.0)
+
+
+def test_handstand_values():
+    v = handstand_values(handstand_skeleton(180, bend=0), "L", 0)
+    assert v["stand_angle"] == pytest.approx(0, abs=2)  # вверх ногами (колено чуть согнуто — линия до лодыжки слегка наклонена)
+    assert v["elbow_angle"] == pytest.approx(176, abs=0.5)
+    assert v["shoulder_angle"] == pytest.approx(172, abs=0.5)
+    assert v["knee_angle"] == pytest.approx(176, abs=0.5)
+    assert handstand_values(handstand_skeleton(0, bend=0), "L", 0)["stand_angle"] == pytest.approx(180, abs=2)
+    assert handstand_values(handstand_skeleton(180, bend=30), "L", 0)["body_bend"] > 20
+
+
+@pytest.mark.parametrize("bad, code", [(None, None), ({"elbow": 135}, "bent_arms"), ({"bend": 35}, "banana"),
+                                       ({"shoulder": 130}, "closed_shoulders"), ({"knee": 130}, "bent_knees"),
+                                       ({"hold": 1.5}, "short_hold")])
+def test_handstand_video_on_skeleton(bad, code):
+    """Согнутая при махе нога НЕ считается ошибкой: оцениваем только саму стойку."""
+    a = handstand_video(handstand_session(3, bad))
+    assert [r.errors for r in a.reps] == [[], [code] if code else [], []]
+    assert a.reps[0].values["hold_seconds:max"] == pytest.approx(4.0, abs=0.6)
+
+
+def test_handstand_live_same_as_video():
+    lm = handstand_session(3, {"bend": 35})
+    expected = [r.errors for r in handstand_video(lm).reps]
+    live = ExerciseLiveSession(HANDSTAND)
+    for i in range(0, len(lm), 2):
+        live.push(i / 30.0, lm[i])
+    assert [r.errors for r in live.agent.reps] == expected
+    assert [f.code for f in live.feedback if f.code != "rep"] == ["banana"]  # подсказка прозвучала во время стойки
+
+
+@pytest.mark.parametrize("error", list(HANDSTAND_DEMO))
+def test_handstand_demo_and_server(error):
+    r = client.get("/api/demo", params={"exercise": "handstand", "errors": error, "lang": "kk"})
+    assert r.status_code == 200
+    data = r.json()
+    assert [[e["key"] for e in rep["errors"]] for rep in data["reps"]] == [[], [error], []]
+    assert data["phase_names"]["ru"][2] == "СТОЙКА"
+    assert data["feedback"][-1]["message"]["ru"].startswith("Попытка 3")
+    assert data["reps"][0]["metrics"][0]["unit"] == "s"

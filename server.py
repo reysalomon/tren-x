@@ -117,7 +117,8 @@ def texts_for(exercise: str) -> dict:
     if exercise == "squat":
         return TEXT
     spec = EXERCISES[exercise]
-    return {lang: {**spec.text[lang], "classes": {}, "rep_ok": TEXT[lang]["rep_ok"], "rep_bad": TEXT[lang]["rep_bad"]}
+    # rep_ok/rep_bad — общие ("Повторение N"), но упражнение может задать свои ("Попытка N" у стойки на руках)
+    return {lang: {"rep_ok": TEXT[lang]["rep_ok"], "rep_bad": TEXT[lang]["rep_bad"], **spec.text[lang], "classes": {}}
             for lang in LANGS}
 
 
@@ -192,10 +193,11 @@ def parse_exercise_settings(spec: ExerciseSpec, raw: str | None, lang: str = "ru
         return float(v)
 
     hmm = default_hmm(spec)
-    hmm.update(top_angle=num("top_angle", spec.top, 140, 180), bottom_angle=num("bottom_angle", spec.bottom, 50, 130),
+    hmm.update(top_angle=num("top_angle", spec.top, *spec.top_range),
+               bottom_angle=num("bottom_angle", spec.bottom, *spec.bottom_range),
                stay_prob=num("stay_prob", 0.9, 0.5, 0.99))
     if hmm["bottom_angle"] >= hmm["top_angle"]:
-        raise fail(400, lang, "bad_param", key="bottom_angle", lo=50, hi=hmm["top_angle"])
+        raise fail(400, lang, "bad_param", key="bottom_angle", lo=spec.bottom_range[0], hi=hmm["top_angle"])
     rules = {f.key: num(f.key, f.default, f.lo, f.hi) for f in spec.fields}
     return hmm, rules
 
@@ -381,6 +383,7 @@ def exercise_info(spec: ExerciseSpec) -> dict:
                     "help": {lang: spec.text[lang]["fields"][f.key][1] for lang in LANGS}} for f in spec.fields],
         "errors": {e: {lang: spec.text[lang]["short"][e] for lang in LANGS} for e in DEMO_ERRORS[spec.key]},
         "phases": {lang: spec.text[lang]["phases"] for lang in LANGS},
+        "ranges": {"top_angle": spec.top_range, "bottom_angle": spec.bottom_range},
     }
 
 
