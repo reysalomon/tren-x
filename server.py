@@ -1,4 +1,4 @@
-"""FormCoach AI — сервер для мобильного сайта. Запуск: uvicorn server:app --host 0.0.0.0 --port 8000
+"""TREN-X — сервер для мобильного сайта. Запуск: uvicorn server:app --host 0.0.0.0 --port 8000
 
 Сервер не содержит своей AI-логики: он принимает видео с телефона, вызывает тот же
 код, что и Streamlit-приложение (formcoach/: HMM, агент, классификатор), и отдаёт
@@ -134,7 +134,7 @@ def feedback_text(f, reps_by_number: dict, texts: dict = TEXT) -> dict:
         return pick(lambda T: T["rep_bad"].format(n=r.number, text="; ".join(T["error"][e] for e in r.errors)))
     return {lang: f.message for lang in LANGS}
 
-app = FastAPI(title="FormCoach AI")
+app = FastAPI(title="TREN-X")
 
 
 @lru_cache(maxsize=1)

@@ -1,4 +1,4 @@
-"""FormCoach AI — веб-интерфейс. Запуск: streamlit run app.py"""
+"""TREN-X — веб-интерфейс. Запуск: streamlit run app.py"""
 
 import hashlib
 import json
@@ -24,8 +24,8 @@ PHASE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
 LEVEL_ICON = {"ok": "✅", "warn": "⚠️", "danger": "⛔", "info": "ℹ️"}
 ERROR_SHORT = {"shallow": "неглубоко", "lean": "наклон", "heels": "пятки", "fast": "быстро"}
 
-st.set_page_config(page_title="FormCoach AI", page_icon="🏋️", layout="wide")
-st.title("FormCoach AI — проверка техники приседаний")
+st.set_page_config(page_title="TREN-X", page_icon="🏋️", layout="wide")
+st.title("TREN-X — проверка техники приседаний")
 st.caption("Загрузи видео сбоку — система посчитает повторения, найдёт фазы движения и подскажет ошибки.")
 
 

@@ -1,4 +1,4 @@
-// FormCoach AI — логика интерфейса. Вся AI-часть работает на сервере (server.py -> formcoach/),
+// TREN-X — логика интерфейса. Вся AI-часть работает на сервере (server.py -> formcoach/),
 // здесь только: отправить видео, показать результат, хранить настройки.
 
 const $ = (sel) => document.querySelector(sel);

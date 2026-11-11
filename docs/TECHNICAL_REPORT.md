@@ -1,5 +1,5 @@
 ---
-title: "FormCoach AI: жаттығу техникасын камера арқылы тексеру"
+title: "TREN-X: жаттығу техникасын камера арқылы тексеру"
 subtitle: "Technical Report — AI Fundamentals, QAIRU AI Application Development Challenge 2026"
 author: "reysalomon (жобаны бір студент орындады)"
 date: "2026"
@@ -7,7 +7,7 @@ date: "2026"
 
 # Аңдатпа
 
-FormCoach AI — телефон браузерінде ашылатын және басты экранға қосымша ретінде орнатылатын мобильді
+TREN-X — телефон браузерінде ашылатын және басты экранға қосымша ретінде орнатылатын мобильді
 веб-сайт (PWA). Ол төрт жаттығуды бағалайды: **отырып-тұру, өлі тартылым, жерден итерілу және турникке
 тартылу**. Қайталауларды санайды, қозғалыс фазаларын табады және техника қателері туралы хабарлайды
 (мысалы, таяз отырыс, штанганың аяқтан алыстауы, жамбастың салбырауы, иектің турниктен аспауы).
@@ -398,7 +398,7 @@ App: `manifest.webmanifest` + service worker `sw.js`). Серверді іске
 
 ![Мобильді сайт: басты бет, нәтиже, HMM фазаларының графигі, алгоритмдер түсіндірмесі](screenshots/mobile_screens.png)
 
-![Жаттығуды таңдау және өлі тартылым, итерілу, турник нәтижелері (демо режим)](screenshots/exercises.png)
+![Жаттығуды таңдау және қолмен тұру нәтижесі: әрекеттер, HMM фазалары, жаттықтырушы кеңестері (демо режим)](screenshots/exercises.png)
 
 - **Тіл:** интерфейс қазақша (әдепкі) және орысша; ҚАЗ / РУС ауыстырғышы жоғарғы жолақта және
   баптауларда. Сервер талдау мәтіндерін (қателер, жаттықтырушы кеңестері, HMM фазаларының атаулары)
@@ -537,4 +537,4 @@ AI Usage Declaration құжатында.
 3. Binus University отырып-тұру датасеті, Zenodo, record 17558630. https://zenodo.org/records/17558630
 4. Google MediaPipe Pose Landmarker. https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker
 5. Pedregosa F. et al. Scikit-learn: Machine Learning in Python // JMLR 12, 2011.
-6. Жоба коды: https://github.com/reysalomon/formcoach-ai
+6. Жоба коды: https://github.com/reysalomon/tren-x

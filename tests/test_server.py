@@ -15,7 +15,7 @@ OWN_LANDMARKS = Path(__file__).resolve().parent.parent / "data" / "labels" / "la
 
 
 def test_index_and_pwa_files_served():
-    assert "FormCoach" in client.get("/").text
+    assert "TREN-X" in client.get("/").text
     assert client.get("/manifest.webmanifest").json()["display"] == "standalone"
     assert client.get("/sw.js").headers["content-type"].startswith("application/javascript")
     assert client.get("/icons/icon-192.png").status_code == 200

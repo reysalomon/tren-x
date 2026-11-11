@@ -1,5 +1,5 @@
 ---
-title: "AI Usage Declaration — FormCoach AI"
+title: "AI Usage Declaration — TREN-X"
 subtitle: "AI Fundamentals, QAIRU AI Application Development Challenge 2026"
 author: "Баглан Исмаилов (GitHub: reysalomon)"
 date: "2026"

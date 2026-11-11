@@ -1,5 +1,5 @@
 ---
-title: "Team Contribution Statement — FormCoach AI"
+title: "Team Contribution Statement — TREN-X"
 subtitle: "AI Fundamentals, QAIRU AI Application Development Challenge 2026"
 author: "Баглан Исмаилов (GitHub: reysalomon)"
 date: "2026"
