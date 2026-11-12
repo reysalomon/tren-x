@@ -4,3 +4,4 @@ __pycache__/
 data/videos/
 *.pyc
 data/external/
+data/processed/real_poses/

@@ -1,4 +1,4 @@
-"""Метрики HMM (неделя 7) и агента (неделя 1) для становой тяги, отжиманий и подтягиваний
+"""Метрики HMM (неделя 7) и агента (неделя 1) для становой тяги, отжиманий, подтягиваний и стойки на руках
 на синтетических подходах с известным ответом — как scripts/eval_synthetic.py для приседа.
 
 Запуск: python scripts/eval_exercises.py
@@ -18,8 +18,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from formcoach.exercises import (EXERCISES, DeadliftRep, PullupRep, PushupRep, analyze_exercise,  # noqa: E402
-                                 deadlift_synthetic, pullup_synthetic, pushup_synthetic)
+from formcoach.exercises import (EXERCISES, DeadliftRep, HandstandRep, PullupRep, PushupRep,  # noqa: E402
+                                 analyze_exercise, deadlift_synthetic, handstand_synthetic, pullup_synthetic,
+                                 pushup_synthetic)
 
 FPS = 30.0
 
@@ -32,11 +33,11 @@ def deadlift_rep(rng, kind):
     r = DeadliftRep(hip=U(rng, 85, 100), knee=U(rng, 115, 140), bar=U(rng, 0.15, 0.35), lean_back=U(rng, -5, 5),
                     seconds=U(rng, 2.0, 3.0))
     if kind == "bar_far":
-        r.bar = U(rng, 0.7, 1.0)
+        r.bar = U(rng, 0.9, 1.2)
     elif kind == "lean_back":
         r.lean_back = U(rng, 22, 35)
     elif kind == "squat_it":
-        r.knee = U(rng, 75, 92)
+        r.knee = U(rng, 65, 82)
     elif kind == "stiff_legs":
         r.knee = U(rng, 168, 176)
     elif kind == "fast":
@@ -71,10 +72,28 @@ def pullup_rep(rng, kind):
     return r
 
 
+def handstand_rep(rng, kind):
+    """Одна попытка стойки на руках: держит 4–8 с, тело почти прямое."""
+    r = HandstandRep(hold=U(rng, 4, 8), elbow=U(rng, 168, 178), bend=U(rng, 3, 12), shoulder=U(rng, 162, 176),
+                     knee=U(rng, 168, 178))
+    if kind == "bent_arms":
+        r.elbow = U(rng, 125, 145)
+    elif kind == "banana":
+        r.bend = U(rng, 28, 40)
+    elif kind == "closed_shoulders":
+        r.shoulder = U(rng, 125, 140)
+    elif kind == "bent_knees":
+        r.knee = U(rng, 120, 145)
+    elif kind == "short_hold":
+        r.hold = U(rng, 1.0, 2.0)
+    return r
+
+
 SETUP = {
     "deadlift": (deadlift_rep, deadlift_synthetic, ["bar_far", "lean_back", "squat_it", "stiff_legs", "fast"]),
     "pushup": (pushup_rep, pushup_synthetic, ["shallow", "sag", "pike", "fast"]),
     "pullup": (pullup_rep, pullup_synthetic, ["chin_low", "no_hang", "swing", "fast"]),
+    "handstand": (handstand_rep, handstand_synthetic, ["bent_arms", "banana", "closed_shoulders", "bent_knees", "short_hold"]),
 }
 
 

@@ -68,6 +68,32 @@ def test_video_counts_reps_both_directions(facing):
     assert all(r.good for r in a.reps), [r.errors for r in a.reps]
 
 
+def floor_session(reps: int = 3, fps: float = 30.0) -> np.ndarray:
+    """Классическая тяга с пола, как в реальных видео (датасет MyDeadlift): человек начинает в наклоне
+    у штанги, встаёт, опускает штангу обратно и секунду отдыхает внизу."""
+    bottom = skeleton(75, 130, bar=0.1)
+    frames = [bottom] * int(fps)
+    for _ in range(reps):
+        for k in (1 + np.cos(np.linspace(0, 2 * np.pi, int(2.5 * fps)))) / 2:  # 1 (низ) -> 0 (стоя) -> 1 (низ)
+            frames.append(skeleton(75 * k, 170 - 40 * k, bar=0.1 * k))
+        frames += [bottom] * int(fps)
+    return np.array(frames)
+
+
+def test_video_counts_reps_from_floor():
+    a = video(floor_session(3))
+    assert len(a.reps) == 3
+    assert all(r.good for r in a.reps), [r.errors for r in a.reps]
+
+
+def test_live_counts_reps_from_floor():
+    lm = floor_session(3)
+    live = ExerciseLiveSession(DEADLIFT)
+    for i in range(0, len(lm), 2):  # 15 кадров в секунду
+        live.push(i / 30.0, lm[i])
+    assert len(live.agent.reps) == 3
+
+
 @pytest.mark.parametrize("bad, code", [({"bar": 0.9}, "bar_far"), ({"knee": 80}, "squat_it"),
                                        ({"knee": 172}, "stiff_legs"), ({"lean_back": 25}, "lean_back")])
 def test_video_finds_errors_on_skeleton(bad, code):
@@ -210,7 +236,7 @@ def test_pushup_demo_and_server(error):
 
 
 # ---------------- подтягивания ----------------
-from formcoach.exercises import PULLUP, PULLUP_DEMO, pullup_values  # noqa: E402
+from formcoach.exercises import PULLUP, PULLUP_DEMO, on_bar, pullup_values  # noqa: E402
 
 
 def pullup_skeleton(elbow: float, lean: float = 5.0, facing: int = 1) -> np.ndarray:
@@ -266,6 +292,29 @@ def test_pullup_values():
 def test_pullup_video_on_skeleton(bad, code):
     a = pullup_video(pullup_session(3, bad))
     assert [r.errors for r in a.reps] == [[], [code] if code else [], []]
+
+
+def arms_down(elbow: float) -> np.ndarray:
+    """Человек стоит у турника и сгибает руки ВНИЗУ (разминается): та же поза, но руки отражены вниз от плеч."""
+    pts = pullup_skeleton(elbow)
+    sh_y = pts[P.L_SHOULDER, 1]
+    for i in (P.L_ELBOW, P.R_ELBOW, P.L_WRIST, P.R_WRIST):
+        pts[i, 1] = 2 * sh_y - pts[i, 1]
+    return pts
+
+
+def test_pullup_ignores_arm_bending_off_the_bar():
+    """Правило "кисти выше плеч" (найдено на видео RepCount): сгибания рук не на перекладине — не подтягивания."""
+    assert on_bar(pullup_skeleton(170), "L") and on_bar(pullup_skeleton(40), "L")
+    assert not on_bar(arms_down(90), "L")
+    k = (1 - np.cos(np.linspace(0, 2 * np.pi, 66))) / 2
+    warmup = np.array([arms_down(170)] * 30 + [arms_down(170 - 130 * x) for x in k] * 3 + [arms_down(170)] * 30)
+    lm = np.concatenate([warmup, pullup_session(3)])
+    assert len(pullup_video(lm).reps) == 3  # три настоящих, разминка не посчитана
+    live = ExerciseLiveSession(PULLUP)
+    for i in range(len(lm)):
+        live.push(i / 30.0, lm[i])
+    assert len(live.agent.reps) == 3
 
 
 def test_pullup_live_same_as_video():

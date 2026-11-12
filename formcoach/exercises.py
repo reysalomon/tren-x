@@ -22,7 +22,7 @@ import numpy as np
 from . import pose as P
 from .agent import Feedback
 from .features import FOOT_MIN_VISIBILITY, joint_angle, lean_from_vertical, smooth
-from .hmm import BOTTOM, TOP, squat_hmm
+from .hmm import BOTTOM, TOP, UP, squat_hmm
 from .live import MIN_VISIBILITY, hmm_for_step, next_phase
 from .pipeline import Analysis
 
@@ -79,6 +79,8 @@ class ExerciseSpec:
     metrics: tuple[tuple[str, str, str], ...]  # (признак, agg, единица) — что показать в карточке повторения
     text: dict  # тексты на двух языках
     hold: bool = False  # упражнение на удержание: ошибки и время считаем только в фазе НИЗ (стойка)
+    from_floor: bool = False  # повторение может начинаться снизу (штанга на полу): низ -> верх -> низ
+    pose_ok: Callable | None = None  # (точки, сторона) -> bool: поза вообще похожа на это упражнение? Нет — кадр пропускаем
     top_range: tuple[float, float] = (140.0, 180.0)  # пределы ползунков HMM "угол вверху" / "угол внизу"
     bottom_range: tuple[float, float] = (50.0, 130.0)
 
@@ -143,15 +145,16 @@ DEADLIFT = ExerciseSpec(
         Check("stiff_legs", "knee_angle", "min", ">", "max_knee_angle"),
     ),
     fields=(
-        Field("max_bar_dist", 0.5, 0.2, 1.2, 0.05),
+        Field("max_bar_dist", 0.7, 0.2, 1.2, 0.05),  # 0.5 давал 12% ложных замечаний на реальных видео (MyDeadlift)
         Field("max_lean_back", 15.0, 5.0, 40.0, 1.0, "°"),
-        Field("min_knee_angle", 100.0, 70.0, 140.0, 1.0, "°"),
+        Field("min_knee_angle", 90.0, 70.0, 140.0, 1.0, "°"),  # подобран на обучающей части MyDeadlift (было 100)
         Field("max_knee_angle", 165.0, 140.0, 180.0, 1.0, "°"),
         Field("min_rep_seconds", 1.0, 0.3, 3.0, 0.1, " s"),
     ),
     values=deadlift_values,
     facing_vote=deadlift_facing,
     required=("sh", "hip", "knee"),
+    from_floor=True,
     metrics=(("hip_angle", "min", "°"), ("knee_angle", "min", "°"), ("lean_back", "max", "°"), ("bar_dist", "max", "")),
     text={
         "ru": {
@@ -322,6 +325,14 @@ def pullup_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]
     }
 
 
+def on_bar(pts: np.ndarray, side: str) -> bool:
+    """Человек держится за перекладину: обе кисти выше плеч (y в картинке растёт вниз).
+    Пока он подходит к турнику, отдыхает или машет руками, локоть тоже сгибается — такие кадры
+    не должны считаться подтягиваниями. Правило появилось после проверки на видео RepCount (scripts/eval_real.py)."""
+    y = pts[:, 1]
+    return bool(max(y[P.L_WRIST], y[P.R_WRIST]) < min(y[P.L_SHOULDER], y[P.R_SHOULDER]))
+
+
 PULLUP = ExerciseSpec(
     key="pullup",
     main="elbow_angle",
@@ -343,6 +354,7 @@ PULLUP = ExerciseSpec(
     values=pullup_values,
     facing_vote=no_facing,
     required=("sh", "el", "wr"),
+    pose_ok=on_bar,
     metrics=(("elbow_angle", "min", "°"), ("chin_gap", "min", ""), ("main_start", "max", "°"), ("lean", "max", "°")),
     text={
         "ru": {
@@ -540,6 +552,11 @@ class ExerciseCoachAgent:
     Восприятие: фаза от HMM + признаки текущего кадра. Модель мира: идёт ли повторение,
     минимумы/максимумы признаков за него, положение стоя перед ним. Действия: подсказки во время
     движения (Check.live) и итог повторения.
+
+    Исходное положение (self._home) — то, в котором человек отдыхает между повторениями. Обычно это ВЕРХ
+    (стоя). Но классическую становую тягу начинают с пола: если видео началось в фазе НИЗ и упражнение
+    это разрешает (spec.from_floor), исходным считается НИЗ, а повторение — низ -> верх -> низ.
+    Так решено после проверки на реальных видео (scripts/eval_real.py, датасет MyDeadlift).
     """
 
     def __init__(self, spec: ExerciseSpec, rules: dict | None = None, fps: float = 30.0):
@@ -548,6 +565,7 @@ class ExerciseCoachAgent:
         self.fps = fps
         self.reps: list[ExerciseRep] = []
         self._in_rep = False
+        self._home: int | None = None  # исходное положение: TOP или BOTTOM, выбирается по началу видео
         self._standing = -np.inf  # самый большой главный угол стоя перед повторением
         self._warned: set[str] = set()
         self._last_end = -10**9  # кадр конца последнего повторения
@@ -558,6 +576,8 @@ class ExerciseCoachAgent:
     def _start_rep(self, frame: int, v: dict):
         self._in_rep, self._start, self._warned, self._agg = True, frame, set(), {}
         self._bottom_frame, self._min_main = frame, v[self.spec.main]
+        self._max_main = v[self.spec.main]
+        self._seen = 0.0  # на скольких кадрах повторения человек был виден в подходящей позе
         self._hold_frames = 0  # сколько кадров подряд в фазе НИЗ (для упражнений на удержание)
         self._update(frame, v, TOP)
 
@@ -578,6 +598,8 @@ class ExerciseCoachAgent:
     def _update(self, frame: int, v: dict, phase: int):
         if v[self.spec.main] < self._min_main:
             self._min_main, self._bottom_frame = v[self.spec.main], frame
+        self._max_main = max(self._max_main, v[self.spec.main])
+        self._seen += v.get("seen", 1.0)  # в видео пропуски заполнены соседними значениями и помечены seen=0
         if self.spec.hold:
             self._hold_frames = self._hold_frames + 1 if phase == BOTTOM else 0
             self._agg["hold_seconds:max"] = max(self._agg.get("hold_seconds:max", 0.0), self._hold_frames / self.fps)
@@ -588,6 +610,7 @@ class ExerciseCoachAgent:
             self._agg[f"{name}:min"] = np.fmin(self._agg.get(f"{name}:min", np.nan), x)  # fmin/fmax пропускают NaN
             self._agg[f"{name}:max"] = np.fmax(self._agg.get(f"{name}:max", np.nan), x)
 
+    MIN_SEEN = 0.6  # повторение засчитываем, если человек был виден в нужной позе хотя бы на 60% его кадров
     TOP_WINDOW_SEC = 1.0  # сколько ещё следим за "верхними" ошибками после конца повторения
 
     def _check_after_rep(self, frame: int, v: dict) -> list[Feedback]:
@@ -607,9 +630,17 @@ class ExerciseCoachAgent:
 
     def step(self, frame: int, phase: int, v: dict) -> list[Feedback]:
         actions: list[Feedback] = self._check_after_rep(frame, v)
+        if self._home is None:  # начало: откуда человек начинает — стоя или с пола
+            if not self.spec.from_floor or phase == TOP:
+                self._home = TOP
+            elif phase in (BOTTOM, UP):  # у пола или уже отрывает штангу — значит, начали с пола
+                self._home = BOTTOM
+            else:  # ОПУСКАНИЕ в самом начале: человек ещё наклоняется к штанге — ждём, пока возьмётся
+                return actions
         if not self._in_rep:
-            if phase == TOP:
-                self._standing = max(self._standing, v[self.spec.main])
+            if phase == self._home:
+                if phase == TOP:
+                    self._standing = max(self._standing, v[self.spec.main])
             else:
                 self._start_rep(frame, v)
             return actions
@@ -622,19 +653,26 @@ class ExerciseCoachAgent:
                 self._warned.add(c.code)
                 actions.append(Feedback(frame, "warn", self.spec.text["ru"]["live"][c.code], len(self.reps) + 1, c.code))
 
-        if phase == TOP:  # вернулся в положение стоя — повторение закончилось
+        if phase == self._home:  # вернулся в исходное положение — повторение закончилось
             self._in_rep = False
             long_enough = (frame - self._start) / self.fps >= 0.4
-            deep_enough = self._standing - self._min_main >= self.spec.min_dip
-            if long_enough and deep_enough:  # иначе это дрожание, а не повторение
+            # размах главного угла за повторение: от положения стоя (или верхней точки, если начали с пола) до низа
+            top = self._standing if self._home == TOP else self._max_main
+            deep_enough = top - self._min_main >= self.spec.min_dip
+            # в живом режиме кадры без человека до агента не доходят, поэтому делим на длину повторения в кадрах
+            # (только для упражнений с проверкой позы pose_ok: у остальных плохая видимость сустава — не повод не считать)
+            seen_enough = self.spec.pose_ok is None or self._seen / (frame - self._start + 1) >= self.MIN_SEEN
+            if long_enough and deep_enough and seen_enough:  # иначе это дрожание или человека почти не было видно
                 actions.append(self._finish(frame))
                 self._last_end = frame
-            self._standing = v[self.spec.main]
+            if phase == TOP:
+                self._standing = v[self.spec.main]
         return actions
 
     def _finish(self, end: int) -> Feedback:
         values = {k: float(x) for k, x in self._agg.items()}
-        values["main_start:max"] = float(self._standing)  # главный угол в исходном положении перед повторением
+        # главный угол в положении стоя перед повторением (если начали с пола — верхняя точка самого повторения)
+        values["main_start:max"] = float(self._standing if self._home == TOP else self._max_main)
         rep = ExerciseRep(len(self.reps) + 1, self._start, end, self._bottom_frame, (end - self._start) / self.fps, values)
         rep.errors = [c.code for c in self.spec.checks
                       if c.broken(values.get(f"{c.feature}:{c.agg}", np.nan), self.rules[c.rule])]
@@ -657,7 +695,9 @@ def _required_idx(spec: ExerciseSpec, side: str) -> list[int]:
 
 
 def _visible(pts: np.ndarray, spec: ExerciseSpec, side: str) -> bool:
-    return not np.isnan(pts[:, :2]).any() and pts[_required_idx(spec, side), 3].min() >= MIN_VISIBILITY
+    if np.isnan(pts[:, :2]).any() or pts[_required_idx(spec, side), 3].min() < MIN_VISIBILITY:
+        return False
+    return spec.pose_ok is None or spec.pose_ok(pts, side)
 
 
 def exercise_features(spec: ExerciseSpec, seq: P.PoseSequence, smooth_window: int = 5) -> dict[str, np.ndarray]:
@@ -675,6 +715,7 @@ def exercise_features(spec: ExerciseSpec, seq: P.PoseSequence, smooth_window: in
     names = list(next(r for r in rows if r is not None))
     feats = {n: smooth(np.array([np.nan if r is None else r[n] for r in rows]), smooth_window) for n in names}
     feats["main_vel"] = np.gradient(feats[spec.main]) * seq.fps
+    feats["seen"] = np.array(seen, dtype=float)  # 1 — кадр настоящий, 0 — значения взяты у соседних кадров
     return feats
 
 
@@ -809,9 +850,9 @@ class DeadliftRep:
 
 
 DEADLIFT_DEMO = {
-    "bar_far": DeadliftRep(bar=0.8),
+    "bar_far": DeadliftRep(bar=0.95),
     "lean_back": DeadliftRep(lean_back=25.0),
-    "squat_it": DeadliftRep(knee=85.0),
+    "squat_it": DeadliftRep(knee=78.0),
     "stiff_legs": DeadliftRep(knee=172.0),
     "fast": DeadliftRep(seconds=0.8),
 }
