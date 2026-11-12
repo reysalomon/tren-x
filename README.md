@@ -20,6 +20,7 @@
 **AI Fundamentals** курсының қорытынды жобасы (QAIRU AI Application Development Challenge 2026).
 
 Толық техникалық есеп: [docs/TECHNICAL_REPORT.md](docs/TECHNICAL_REPORT.md) ([.docx](docs/TECHNICAL_REPORT.docx) нұсқасы да бар).
+Демо-видео сценарийі: [docs/DEMO_VIDEO_SCRIPT.md](docs/DEMO_VIDEO_SCRIPT.md).
 
 Мобильді сайт екі тілде жұмыс істейді: **қазақша** (әдепкі) және **орысша**, тілді ҚАЗ / РУС батырмасымен ауыстыруға болады.
 
