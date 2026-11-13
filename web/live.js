@@ -8,7 +8,7 @@ const MP_VERSION = "0.10.14";
 const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 // Голосовые фразы: web/audio/<язык>/<имя>.mp3 (записаны в ElevenLabs). Нет файла — говорит синтез речи браузера.
-const CLIPS = ["start", "good", "shallow", "lean", "danger", "heels", "fast", "no_person", "finish"];
+const CLIPS = ["start", "good", "shallow", "lean", "danger", "heels", "fast", "no_person", "finish", "bar_far", "lean_back", "squat_it", "stiff_legs", "sag", "pike", "bent_arms", "banana", "closed_shoulders", "bent_knees", "short_hold", "chin_low", "no_hang", "swing"];
 // Линии скелета на экране (номера точек MediaPipe)
 const BONES = [[11, 12], [11, 23], [12, 24], [23, 24], [11, 13], [13, 15], [12, 14], [14, 16],
   [23, 25], [25, 27], [27, 29], [29, 31], [27, 31], [24, 26], [26, 28], [28, 30], [30, 32], [28, 32]];
