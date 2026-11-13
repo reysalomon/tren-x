@@ -52,9 +52,12 @@ svg { fill: currentColor; }
   background: linear-gradient(var(--bg) 70%, transparent);
 }
 .topbar-title { font-weight: 700; font-size: 17px; }
-.brand { font-family: var(--display); font-weight: 800; font-size: 18px; display: flex; align-items: center; gap: 8px; }
-.brand-dot { width: 6px; height: 20px; background: var(--accent); }
-.brand-ai { color: var(--accent-ink); background: var(--accent); font-size: 11px; padding: 2px 6px; border-radius: 2px; }
+/* логотип: табличка в рамке, наклонённая вперёд — слово TREN и лаймовый блок с рубленым X */
+.brand { display: inline-flex; align-items: stretch; height: 34px; margin-left: 4px; border: 2px solid var(--text); transform: skewX(-9deg);
+  font-family: var(--display); font-weight: 700; font-size: 22px; line-height: 1; letter-spacing: .08em; }
+.brand-word { display: grid; place-items: center; padding: 0 8px 0 10px; }
+.brand-x { display: grid; place-items: center; width: 34px; margin: -2px -2px -2px 0; background: var(--accent); color: var(--accent-ink); }
+.brand-x svg { width: 22px; height: 22px; }
 .icon-btn { width: 40px; height: 40px; border-radius: 4px; border: 0; background: var(--surface); display: grid; place-items: center; cursor: pointer; }
 .icon-btn svg { width: 22px; height: 22px; }
 .icon-btn-spacer { width: 40px; }
@@ -331,8 +334,6 @@ body.live-on .tabbar { display: none; }
 
 /* ---------- суровый стиль: тяжёлый узкий шрифт, заглавные буквы, рамки вместо мягких плашек ---------- */
 h1 { font-weight: 700; font-size: clamp(38px, 12vw, 56px); line-height: 1.02; letter-spacing: 0; text-transform: uppercase; }
-.brand { font-weight: 700; font-size: 22px; letter-spacing: .04em; }
-.brand-ai { font-size: 15px; padding: 0 6px; }
 .eyebrow { font-family: var(--display); font-weight: 600; font-size: 14px; letter-spacing: .14em; }
 .hero::after { content: ""; display: block; width: 88px; height: 8px; margin-top: 18px;
   background: repeating-linear-gradient(-45deg, var(--accent) 0 8px, transparent 8px 16px); } /* полоса как на разметке в зале */
