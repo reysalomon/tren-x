@@ -281,12 +281,12 @@ function render(data, source, navigate = true) {
     t(reps === 0 ? "h_none" : share === 1 ? "h_perfect" : share >= 0.6 ? "h_ok" : "h_fix");
   $("#score-sub").textContent = reps === 0 ? t("sub_none") : t("sub_good", { good, reps });
   const ring = $("#ring-fg");
-  ring.style.stroke = share >= 0.6 || reps === 0 ? "var(--accent)" : "var(--warn)";
+  ring.style.stroke = share >= 0.6 || reps === 0 ? "var(--ok)" : "var(--warn)";
   ring.style.strokeDashoffset = 327;
   requestAnimationFrame(() => requestAnimationFrame(() => (ring.style.strokeDashoffset = 327 * (1 - share))));
 
   renderAdvice(data.reps);
-  renderReps(data.reps);
+  renderReps(data.reps, data.exercise ?? "squat");
   renderChart(data);
   renderFeedback(data.feedback);
   $("#ml-note").textContent = t(data.has_ml ? "ml_note" : (data.exercise ?? "squat") !== "squat" ? "ml_none_ex" : "ml_demo");
@@ -305,10 +305,7 @@ function renderAdvice(reps) {
     : `<li>${t(reps.length ? "advice_none" : "advice_empty")}</li>`;
 }
 
-const SILHOUETTE = `<svg class="silhouette" viewBox="0 0 64 64" aria-hidden="true"><circle cx="30" cy="10" r="6"/>
-  <path d="M27 18h7l6 16 12 1v6l-16-1-4 10 6 10h-7l-8-11 3-10-7-9z"/></svg>`;
-
-function renderReps(reps) {
+function renderReps(reps, ex = "squat") {
   const box = $("#reps");
   if (!reps.length) {
     box.innerHTML = `<div class="card muted">${t("reps_none")}</div>`;
@@ -340,7 +337,7 @@ function renderReps(reps) {
           <span class="${keys.includes("fast") ? "over" : ""}">${t("m_time")} <b>${r.seconds.toFixed(1)} ${t("sec")}</b></span>
           <span>${t("m_depth")} <b>${rules.max_thigh_angle}°</b></span>`;
     return `<article class="rep ${r.good ? "" : "bad"}">
-      <div class="rep-img">${r.image ? `<img src="${r.image}" alt="${t("img_alt", { n: r.number })}">` : SILHOUETTE}</div>
+      <div class="rep-img">${r.image ? `<img src="${r.image}" alt="${t("img_alt", { n: r.number })}">` : repFigure(ex, r)}</div>
       <div class="rep-body">
         <div class="rep-head"><span class="rep-num">#${r.number}</span>${verdict}</div>
         <div class="metrics">${metrics}</div>
