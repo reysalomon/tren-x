@@ -1,6 +1,6 @@
 // Service worker: запоминает файлы интерфейса, чтобы сайт открывался быстро и работал как приложение.
 // Запросы к /api/ всегда идут на сервер — анализ без интернета невозможен.
-const CACHE = "trenx-v11";
+const CACHE = "trenx-v12";
 const SHELL = ["/", "/style.css", "/i18n.js", "/figure.js", "/app.js", "/live.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
@@ -18,12 +18,12 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.pathname.startsWith("/api/") || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "no-cache" })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));
         return res;
       })
-      .catch(() => caches.match(e.request)),
+      .catch(() => caches.match(e.request, { ignoreSearch: true })),
   );
 });

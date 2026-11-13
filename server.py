@@ -137,6 +137,16 @@ def feedback_text(f, reps_by_number: dict, texts: dict = TEXT) -> dict:
 app = FastAPI(title="TREN-X")
 
 
+@app.middleware("http")
+async def always_fresh(request, call_next):
+    """Файлы сайта браузер обязан перепроверять на сервере (no-cache), иначе телефон после обновления
+    ещё долго показывает старый дизайн из своего кеша. На /api/ не влияет."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @lru_cache(maxsize=1)
 def load_classifier() -> FormClassifier | None:
     return FormClassifier.load()
