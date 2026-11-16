@@ -1,6 +1,6 @@
 // Service worker: запоминает файлы интерфейса, чтобы сайт открывался быстро и работал как приложение.
 // Запросы к /api/ всегда идут на сервер — анализ без интернета невозможен.
-const CACHE = "trenx-v18";
+const CACHE = "trenx-v19";
 const SHELL = ["/", "/style.css", "/i18n.js", "/figure.js", "/app.js", "/live.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {

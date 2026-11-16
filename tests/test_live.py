@@ -99,8 +99,8 @@ def test_phase_does_not_get_stuck_in_descent():
 
 
 def test_voice_clips_for_both_languages():
-    """Каждая голосовая фраза из live.js есть на казахском и русском: mp3-запись или (если записи нет) текст
-    say_... для синтеза речи в браузере. Записанные mp3 сервер отдаёт как audio/mpeg."""
+    """Каждая голосовая фраза из live.js есть на казахском и русском: mp3-запись (сервер отдаёт её как audio/mpeg)
+    и текст say_... — на случай, если mp3 не загрузится и фразу скажет синтез речи браузера."""
     import sys
     sys.path.insert(0, str(Path(server.__file__).resolve().parent / "scripts"))
     from make_voice import phrases
@@ -113,9 +113,7 @@ def test_voice_clips_for_both_languages():
     for lang in ("kk", "ru"):
         for name in names:
             assert name in texts[lang], f"нет текста say_{name} ({lang})"
-            if (web / "audio" / lang / f"{name}.mp3").exists():
-                assert client_get(f"/audio/{lang}/{name}.mp3").headers["content-type"] == "audio/mpeg"
-    assert len(list((web / "audio" / "kk").glob("*.mp3"))) >= 18  # основные фразы записаны голосом Callum
+            assert client_get(f"/audio/{lang}/{name}.mp3").headers["content-type"] == "audio/mpeg"
 
 
 def client_get(url):
