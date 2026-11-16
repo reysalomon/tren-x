@@ -1973,6 +1973,580 @@
           "threshold": 14
         }
       ]
+    },
+    "bench": {
+      "videos": 93,
+      "skipped": 32,
+      "hmm": {
+        "exact": 0.0967741935483871,
+        "off_by_one": 0.20430107526881722,
+        "mae": 6.602150537634409
+      },
+      "threshold": {
+        "exact": 0.15053763440860216,
+        "off_by_one": 0.3548387096774194,
+        "mae": 6.440860215053763
+      },
+      "per_video": [
+        {
+          "video": "stu3_3.mp4",
+          "true": 9,
+          "hmm": 0,
+          "threshold": 10
+        },
+        {
+          "video": "stu9_8.mp4",
+          "true": 12,
+          "hmm": 22,
+          "threshold": 27
+        },
+        {
+          "video": "stu8_7.mp4",
+          "true": 5,
+          "hmm": 6,
+          "threshold": 7
+        },
+        {
+          "video": "stu6_4.mp4",
+          "true": 5,
+          "hmm": 5,
+          "threshold": 6
+        },
+        {
+          "video": "stu10_8.mp4",
+          "true": 4,
+          "hmm": 0,
+          "threshold": 4
+        },
+        {
+          "video": "stu8_14.mp4",
+          "true": 13,
+          "hmm": 11,
+          "threshold": 14
+        },
+        {
+          "video": "stu5_5.mp4",
+          "true": 30,
+          "hmm": 3,
+          "threshold": 5
+        },
+        {
+          "video": "stu5_9.mp4",
+          "true": 18,
+          "hmm": 18,
+          "threshold": 18
+        },
+        {
+          "video": "stu9_9.mp4",
+          "true": 12,
+          "hmm": 18,
+          "threshold": 39
+        },
+        {
+          "video": "train143.mp4",
+          "true": 0,
+          "hmm": 0,
+          "threshold": 2
+        },
+        {
+          "video": "stu10_5.mp4",
+          "true": 16,
+          "hmm": 5,
+          "threshold": 8
+        },
+        {
+          "video": "stu10_1.mp4",
+          "true": 2,
+          "hmm": 2,
+          "threshold": 3
+        },
+        {
+          "video": "stu8_9.mp4",
+          "true": 28,
+          "hmm": 39,
+          "threshold": 49
+        },
+        {
+          "video": "stu8_12.mp4",
+          "true": 3,
+          "hmm": 7,
+          "threshold": 8
+        },
+        {
+          "video": "stu7_8.mp4",
+          "true": 8,
+          "hmm": 8,
+          "threshold": 8
+        },
+        {
+          "video": "stu8_10.mp4",
+          "true": 11,
+          "hmm": 5,
+          "threshold": 6
+        },
+        {
+          "video": "stu10_6.mp4",
+          "true": 4,
+          "hmm": 0,
+          "threshold": 2
+        },
+        {
+          "video": "stu2_5.mp4",
+          "true": 3,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu3_5.mp4",
+          "true": 33,
+          "hmm": 0,
+          "threshold": 4
+        },
+        {
+          "video": "stu7_13.mp4",
+          "true": 11,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu8_11.mp4",
+          "true": 9,
+          "hmm": 5,
+          "threshold": 9
+        },
+        {
+          "video": "stu6_3.mp4",
+          "true": 13,
+          "hmm": 13,
+          "threshold": 13
+        },
+        {
+          "video": "stu7_10.mp4",
+          "true": 8,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu9_2.mp4",
+          "true": 3,
+          "hmm": 5,
+          "threshold": 4
+        },
+        {
+          "video": "val77.mp4",
+          "true": 3,
+          "hmm": 3,
+          "threshold": 4
+        },
+        {
+          "video": "stu6_1.mp4",
+          "true": 5,
+          "hmm": 4,
+          "threshold": 8
+        },
+        {
+          "video": "train160.mp4",
+          "true": 7,
+          "hmm": 10,
+          "threshold": 16
+        },
+        {
+          "video": "stu8_1.mp4",
+          "true": 3,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu8_5.mp4",
+          "true": 47,
+          "hmm": 2,
+          "threshold": 6
+        },
+        {
+          "video": "stu1_9.mp4",
+          "true": 10,
+          "hmm": 2,
+          "threshold": 14
+        },
+        {
+          "video": "stu7_14.mp4",
+          "true": 29,
+          "hmm": 6,
+          "threshold": 20
+        },
+        {
+          "video": "train156.mp4",
+          "true": 3,
+          "hmm": 2,
+          "threshold": 3
+        },
+        {
+          "video": "stu1_11.mp4",
+          "true": 12,
+          "hmm": 0,
+          "threshold": 8
+        },
+        {
+          "video": "stu1_4.mp4",
+          "true": 3,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu2_3.mp4",
+          "true": 16,
+          "hmm": 3,
+          "threshold": 3
+        },
+        {
+          "video": "stu9_3.mp4",
+          "true": 46,
+          "hmm": 14,
+          "threshold": 16
+        },
+        {
+          "video": "stu10_10.mp4",
+          "true": 16,
+          "hmm": 18,
+          "threshold": 18
+        },
+        {
+          "video": "stu5_8.mp4",
+          "true": 1,
+          "hmm": 8,
+          "threshold": 11
+        },
+        {
+          "video": "stu10_9.mp4",
+          "true": 9,
+          "hmm": 1,
+          "threshold": 9
+        },
+        {
+          "video": "stu10_3.mp4",
+          "true": 6,
+          "hmm": 4,
+          "threshold": 6
+        },
+        {
+          "video": "stu8_6.mp4",
+          "true": 8,
+          "hmm": 5,
+          "threshold": 7
+        },
+        {
+          "video": "stu7_0.mp4",
+          "true": 1,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu9_5.mp4",
+          "true": 13,
+          "hmm": 1,
+          "threshold": 3
+        },
+        {
+          "video": "stu6_5.mp4",
+          "true": 12,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu1_10.mp4",
+          "true": 3,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu4_3.mp4",
+          "true": 4,
+          "hmm": 0,
+          "threshold": 4
+        },
+        {
+          "video": "stu7_2.mp4",
+          "true": 19,
+          "hmm": 5,
+          "threshold": 12
+        },
+        {
+          "video": "stu4_7.mp4",
+          "true": 12,
+          "hmm": 14,
+          "threshold": 13
+        },
+        {
+          "video": "train139.mp4",
+          "true": 1,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu8_15.mp4",
+          "true": 13,
+          "hmm": 11,
+          "threshold": 13
+        },
+        {
+          "video": "stu8_8.mp4",
+          "true": 11,
+          "hmm": 4,
+          "threshold": 8
+        },
+        {
+          "video": "stu1_2.mp4",
+          "true": 7,
+          "hmm": 13,
+          "threshold": 13
+        },
+        {
+          "video": "test127.mp4",
+          "true": 5,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu10_4.mp4",
+          "true": 12,
+          "hmm": 18,
+          "threshold": 26
+        },
+        {
+          "video": "stu5_6.mp4",
+          "true": 5,
+          "hmm": 10,
+          "threshold": 14
+        },
+        {
+          "video": "stu8_2.mp4",
+          "true": 11,
+          "hmm": 7,
+          "threshold": 10
+        },
+        {
+          "video": "stu4_6.mp4",
+          "true": 8,
+          "hmm": 0,
+          "threshold": 8
+        },
+        {
+          "video": "stu2_8.mp4",
+          "true": 14,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu10_7.mp4",
+          "true": 2,
+          "hmm": 1,
+          "threshold": 3
+        },
+        {
+          "video": "stu7_11.mp4",
+          "true": 4,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "stu9_7.mp4",
+          "true": 6,
+          "hmm": 7,
+          "threshold": 14
+        },
+        {
+          "video": "stu2_7.mp4",
+          "true": 11,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "train186.mp4",
+          "true": 2,
+          "hmm": 2,
+          "threshold": 3
+        },
+        {
+          "video": "stu10_11.mp4",
+          "true": 20,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu10_2.mp4",
+          "true": 11,
+          "hmm": 5,
+          "threshold": 29
+        },
+        {
+          "video": "stu3_7.mp4",
+          "true": 16,
+          "hmm": 2,
+          "threshold": 21
+        },
+        {
+          "video": "stu9_4.mp4",
+          "true": 8,
+          "hmm": 5,
+          "threshold": 13
+        },
+        {
+          "video": "test118.mp4",
+          "true": 6,
+          "hmm": 4,
+          "threshold": 5
+        },
+        {
+          "video": "stu1_3.mp4",
+          "true": 4,
+          "hmm": 1,
+          "threshold": 13
+        },
+        {
+          "video": "stu7_7.mp4",
+          "true": 4,
+          "hmm": 3,
+          "threshold": 8
+        },
+        {
+          "video": "stu2_10.mp4",
+          "true": 6,
+          "hmm": 6,
+          "threshold": 7
+        },
+        {
+          "video": "stu2_13.mp4",
+          "true": 11,
+          "hmm": 0,
+          "threshold": 1
+        },
+        {
+          "video": "train184.mp4",
+          "true": 2,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu3_6.mp4",
+          "true": 6,
+          "hmm": 8,
+          "threshold": 13
+        },
+        {
+          "video": "stu8_13.mp4",
+          "true": 5,
+          "hmm": 8,
+          "threshold": 11
+        },
+        {
+          "video": "stu1_6.mp4",
+          "true": 11,
+          "hmm": 10,
+          "threshold": 12
+        },
+        {
+          "video": "stu2_9.mp4",
+          "true": 9,
+          "hmm": 5,
+          "threshold": 9
+        },
+        {
+          "video": "test168.mp4",
+          "true": 3,
+          "hmm": 2,
+          "threshold": 3
+        },
+        {
+          "video": "stu8_16.mp4",
+          "true": 10,
+          "hmm": 2,
+          "threshold": 19
+        },
+        {
+          "video": "stu9_1.mp4",
+          "true": 6,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu7_6.mp4",
+          "true": 3,
+          "hmm": 1,
+          "threshold": 7
+        },
+        {
+          "video": "stu1_12.mp4",
+          "true": 8,
+          "hmm": 6,
+          "threshold": 29
+        },
+        {
+          "video": "stu1_5.mp4",
+          "true": 11,
+          "hmm": 0,
+          "threshold": 2
+        },
+        {
+          "video": "test138.mp4",
+          "true": 12,
+          "hmm": 5,
+          "threshold": 13
+        },
+        {
+          "video": "stu6_2.mp4",
+          "true": 9,
+          "hmm": 6,
+          "threshold": 9
+        },
+        {
+          "video": "stu2_4.mp4",
+          "true": 1,
+          "hmm": 7,
+          "threshold": 6
+        },
+        {
+          "video": "stu2_11.mp4",
+          "true": 8,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu7_5.mp4",
+          "true": 10,
+          "hmm": 0,
+          "threshold": 0
+        },
+        {
+          "video": "stu7_9.mp4",
+          "true": 10,
+          "hmm": 19,
+          "threshold": 26
+        },
+        {
+          "video": "stu3_4.mp4",
+          "true": 4,
+          "hmm": 1,
+          "threshold": 5
+        },
+        {
+          "video": "test142.mp4",
+          "true": 2,
+          "hmm": 4,
+          "threshold": 3
+        },
+        {
+          "video": "stu7_12.mp4",
+          "true": 15,
+          "hmm": 9,
+          "threshold": 21
+        },
+        {
+          "video": "stu9_11.mp4",
+          "true": 15,
+          "hmm": 2,
+          "threshold": 23
+        }
+      ]
     }
   },
   "mydeadlift": {

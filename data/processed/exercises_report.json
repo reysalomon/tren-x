@@ -43,7 +43,7 @@
         "support": 125
       }
     },
-    "analysis_ms_per_session": 21.462265944995806
+    "analysis_ms_per_session": 44.97409370999918
   },
   "pushup": {
     "sessions": 200,
@@ -83,7 +83,7 @@
         "support": 145
       }
     },
-    "analysis_ms_per_session": 17.74223494498642
+    "analysis_ms_per_session": 31.298471264998685
   },
   "pullup": {
     "sessions": 200,
@@ -123,9 +123,9 @@
         "support": 163
       }
     },
-    "analysis_ms_per_session": 18.258513279993167
+    "analysis_ms_per_session": 30.46325313000324
   },
-  "handstand": {
+  "dips": {
     "sessions": 200,
     "count": {
       "hmm": {
@@ -133,42 +133,76 @@
         "mae": 0.0
       },
       "threshold": {
-        "exact": 1.0,
-        "mae": 0.0
+        "exact": 0.81,
+        "mae": 0.295
       }
     },
     "errors": {
-      "bent_arms": {
-        "precision": 1.0,
+      "shallow": {
+        "precision": 0.9822485207100592,
         "recall": 1.0,
-        "f1": 1.0,
-        "support": 120
+        "f1": 0.9910447761194029,
+        "support": 166
       },
-      "banana": {
+      "too_deep": {
         "precision": 1.0,
         "recall": 1.0,
         "f1": 1.0,
-        "support": 117
+        "support": 160
       },
-      "closed_shoulders": {
+      "no_lockout": {
         "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0,
-        "support": 132
+        "recall": 0.8857142857142857,
+        "f1": 0.9393939393939393,
+        "support": 175
       },
-      "bent_knees": {
-        "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0,
-        "support": 148
-      },
-      "short_hold": {
-        "precision": 1.0,
-        "recall": 1.0,
-        "f1": 1.0,
-        "support": 125
+      "fast": {
+        "precision": 0.9934640522875817,
+        "recall": 0.9101796407185628,
+        "f1": 0.95,
+        "support": 167
       }
     },
-    "analysis_ms_per_session": 63.66844506000007
+    "analysis_ms_per_session": 33.326531894998084
+  },
+  "bench": {
+    "sessions": 200,
+    "count": {
+      "hmm": {
+        "exact": 0.985,
+        "mae": 0.015
+      },
+      "threshold": {
+        "exact": 0.69,
+        "mae": 0.345
+      }
+    },
+    "errors": {
+      "no_chest": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 174
+      },
+      "butt_up": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 167
+      },
+      "no_lockout": {
+        "precision": 1.0,
+        "recall": 0.9119496855345912,
+        "f1": 0.9539473684210527,
+        "support": 159
+      },
+      "fast": {
+        "precision": 0.9395973154362416,
+        "recall": 0.9790209790209791,
+        "f1": 0.958904109589041,
+        "support": 143
+      }
+    },
+    "analysis_ms_per_session": 31.467259625001414
   }
 }
