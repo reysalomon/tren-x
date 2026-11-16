@@ -18,9 +18,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from formcoach.exercises import (EXERCISES, DeadliftRep, HandstandRep, PullupRep, PushupRep,  # noqa: E402
-                                 analyze_exercise, deadlift_synthetic, handstand_synthetic, pullup_synthetic,
-                                 pushup_synthetic)
+from formcoach.exercises import (EXERCISES, BenchRep, DeadliftRep, DipsRep, PullupRep, PushupRep,  # noqa: E402
+                                 analyze_exercise, bench_synthetic, deadlift_synthetic, dips_synthetic,
+                                 pullup_synthetic, pushup_synthetic)
 
 FPS = 30.0
 
@@ -72,20 +72,31 @@ def pullup_rep(rng, kind):
     return r
 
 
-def handstand_rep(rng, kind):
-    """Одна попытка стойки на руках: держит 4–8 с, тело почти прямое."""
-    r = HandstandRep(hold=U(rng, 4, 8), elbow=U(rng, 168, 178), bend=U(rng, 3, 12), shoulder=U(rng, 162, 176),
-                     knee=U(rng, 168, 178))
-    if kind == "bent_arms":
-        r.elbow = U(rng, 125, 145)
-    elif kind == "banana":
-        r.bend = U(rng, 28, 40)
-    elif kind == "closed_shoulders":
-        r.shoulder = U(rng, 125, 140)
-    elif kind == "bent_knees":
-        r.knee = U(rng, 120, 145)
-    elif kind == "short_hold":
-        r.hold = U(rng, 1.0, 2.0)
+def dips_rep(rng, kind):
+    """Брусья: локоть внизу ~80–95°, плечо чуть ниже локтя, наверху руки прямые."""
+    r = DipsRep(elbow=U(rng, 80, 95), drop=U(rng, -0.1, 0.2), lock=U(rng, 162, 175), seconds=U(rng, 1.8, 2.6))
+    if kind == "shallow":
+        r.elbow, r.drop = U(rng, 112, 128), U(rng, -0.6, -0.3)
+    elif kind == "too_deep":
+        r.elbow, r.drop = U(rng, 60, 75), U(rng, 0.6, 0.9)
+    elif kind == "no_lockout":
+        r.lock = U(rng, 128, 142)
+    elif kind == "fast":
+        r.seconds = U(rng, 0.6, 0.85)
+    return r
+
+
+def bench_rep(rng, kind):
+    """Жим лёжа: гриф у груди (локоть ~75–90°), таз на скамье, наверху руки прямые."""
+    r = BenchRep(elbow=U(rng, 75, 90), hip=U(rng, -0.05, 0.08), lock=U(rng, 160, 175), seconds=U(rng, 1.8, 2.6))
+    if kind == "no_chest":
+        r.elbow = U(rng, 112, 128)
+    elif kind == "butt_up":
+        r.hip = U(rng, 0.32, 0.5)
+    elif kind == "no_lockout":
+        r.lock = U(rng, 128, 142)
+    elif kind == "fast":
+        r.seconds = U(rng, 0.6, 0.85)
     return r
 
 
@@ -93,7 +104,8 @@ SETUP = {
     "deadlift": (deadlift_rep, deadlift_synthetic, ["bar_far", "lean_back", "squat_it", "stiff_legs", "fast"]),
     "pushup": (pushup_rep, pushup_synthetic, ["shallow", "sag", "pike", "fast"]),
     "pullup": (pullup_rep, pullup_synthetic, ["chin_low", "no_hang", "swing", "fast"]),
-    "handstand": (handstand_rep, handstand_synthetic, ["bent_arms", "banana", "closed_shoulders", "bent_knees", "short_hold"]),
+    "dips": (dips_rep, dips_synthetic, ["shallow", "too_deep", "no_lockout", "fast"]),
+    "bench": (bench_rep, bench_synthetic, ["no_chest", "butt_up", "no_lockout", "fast"]),
 }
 
 

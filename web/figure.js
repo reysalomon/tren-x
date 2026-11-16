@@ -135,29 +135,49 @@ function pullupPose(r, err) {
   };
 }
 
-function handstandPose(r, err) {
+function dipsPose(r, err) {
   const v = metric(r);
-  const bow = num(v[1], 8), e = num(v[2], 175), open = num(v[3], 170), k = num(v[4], 175);
-  const floor = 0, wr = [0, 0];
-  const sh = [0, -reach(e)];
-  const el = elbowPoint(sh, wr, (a, b) => a[0] > b[0]);
-  const lean = -(180 - open); // закрытые плечи — корпус уходит от вертикали
-  const hip = polar(sh, FIG.torso, lean);
-  const knee = polar(hip, FIG.thigh, lean + bow); // "банан" — ноги заваливаются в другую сторону
-  const ankle = polar(knee, FIG.shin, lean + bow + (180 - k));
+  const lock = err.has("no_lockout"); // ошибка про верх: показываем недовыпрямленные руки наверху
+  const e = lock ? num(v[2], 140) : num(v[0], 85);
+  const wr = [0, 0]; // кисти на брусьях
+  const el = [-2, -FIG.fore]; // предплечье почти вертикально
+  const sh = [el[0] + FIG.upper * Math.sin(rad(e)), el[1] + FIG.upper * Math.cos(rad(e))]; // 180 — над локтем, 90 — вровень
+  const hip = polar(sh, FIG.torso, 195); // корпус чуть наклонён вперёд
+  const knee = polar(hip, FIG.thigh, 185);
+  const ankle = polar(knee, FIG.shin, 250); // голени согнуты назад
   return {
-    floor, head: [sh[0] + 7, sh[1] + 9],
+    head: headOn(sh, hip), pullbar: wr,
     bones: [
-      ["foot", [ankle, polar(ankle, 8, lean + bow + (180 - k) + 15)], false],
-      ["leg", [knee, ankle], err.has("bent_knees")],
-      ["leg", [hip, knee], err.has("banana") || err.has("bent_knees")],
-      ["torso", [hip, sh], err.has("banana") || err.has("closed_shoulders")],
-      ["arm", [sh, el, wr], err.has("bent_arms") || err.has("closed_shoulders")],
+      ["foot", [ankle, [ankle[0] - 7, ankle[1] + 3]], false],
+      ["leg", [ankle, knee, hip], false],
+      ["torso", [hip, sh], false],
+      ["arm", [sh, el, wr], err.has("shallow") || err.has("too_deep") || lock],
     ],
   };
 }
 
-const POSES = { squat: squatPose, deadlift: deadliftPose, pushup: pushupPose, pullup: pullupPose, handstand: handstandPose };
+function benchPose(r, err) {
+  const v = metric(r);
+  const lock = err.has("no_lockout");
+  const e = lock ? num(v[2], 140) : num(v[0], 80), rise = Math.max(num(v[1], 0), 0);
+  const sh = [0, 0]; // лежит на спине, голова справа
+  const hip = [-FIG.torso, -rise * FIG.torso];
+  const wr = [2, -reach(e)]; // гриф над плечом
+  const el = elbowPoint(sh, wr, (a, b) => a[0] < b[0]); // локоть уходит к ногам
+  const knee = [hip[0] - 20, hip[1] - 12];
+  const ankle = [knee[0] - 3, knee[1] + 26];
+  return {
+    floor: ankle[1] + 2, head: [sh[0] + 9, sh[1] - 3], bar: wr,
+    bones: [
+      ["foot", [ankle, [ankle[0] + 8, ankle[1] + 2]], false],
+      ["leg", [ankle, knee, hip], err.has("butt_up")],
+      ["torso", [hip, sh], err.has("butt_up")],
+      ["arm", [sh, el, wr], err.has("no_chest") || lock],
+    ],
+  };
+}
+
+const POSES = { squat: squatPose, deadlift: deadliftPose, pushup: pushupPose, pullup: pullupPose, dips: dipsPose, bench: benchPose };
 
 // Готовая SVG-картинка для карточки. exercise — ключ упражнения, r — повторение из ответа сервера.
 function repFigure(exercise, r) {

@@ -349,91 +349,149 @@ def test_pullup_demo_and_server(error):
     assert data["phase_names"]["ru"][0] == "ВИС"
 
 
-# ---------------- стойка на руках ----------------
-from formcoach.exercises import HANDSTAND, HANDSTAND_DEMO, handstand_values  # noqa: E402
+# ---------------- брусья и жим лёжа ----------------
+from formcoach.exercises import (BENCH, BENCH_DEMO, DIPS, DIPS_DEMO, bench_values, body_moves,  # noqa: E402
+                                 dips_values, on_bars, on_bench)
 
 
-def rot(v, deg):
-    a = np.radians(deg)
-    return np.array([v[0] * np.cos(a) - v[1] * np.sin(a), v[0] * np.sin(a) + v[1] * np.cos(a)])
-
-
-def handstand_skeleton(turn: float, elbow: float = 176, bend: float = 4, shoulder: float = 172,
-                       knee: float = 176) -> np.ndarray:
-    """Человек сбоку с поднятыми руками, повёрнутый на turn градусов (0 — стоит на ногах, 180 — на руках).
-    Сначала строим тело в обычных координатах (y вверх, плечо в нуле), потом поворачиваем и переводим в пиксели."""
-    down = np.array([0.0, -1.0])
-    hip = 120 * down
-    knee_pt = hip + 100 * rot(down, bend)
-    ankle = knee_pt + 100 * rot(down, bend + (180 - knee))
-    el = 70 * rot(down, shoulder)  # угол локоть-плечо-таз = shoulder
-    wr = el + 70 * rot(el / 70, -(180 - elbow))
-    pts = np.zeros((33, 4))
-    pts[:, 3] = 0.95
-    to_px = lambda v: np.array([400, 400]) + rot(v, turn) * [1, -1]  # noqa: E731  (y в картинке вниз)
+def put(pts: np.ndarray, joints: dict, facing: int = 1) -> np.ndarray:
+    """Одинаковые точки для левой и правой стороны (камера строго сбоку)."""
     for side in ("L", "R"):
-        g = lambda name: getattr(P, f"{side}_{name}")  # noqa: E731
-        for name, xy in [("SHOULDER", np.zeros(2)), ("ELBOW", el), ("WRIST", wr), ("HIP", hip), ("KNEE", knee_pt),
-                         ("ANKLE", ankle), ("HEEL", ankle), ("FOOT", ankle + [10, 0])]:
-            pts[g(name), :2] = to_px(xy)
+        for name, xy in joints.items():
+            pts[getattr(P, f"{side}_{name}"), :2] = xy
     return pts
 
 
-def handstand_session(attempts: int = 3, bad: dict | None = None, hold: float = 4.0, fps: float = 30.0) -> np.ndarray:
-    """Стоит 1 с, потом attempts попыток: мах 0.8 с (нога согнута) -> стойка hold с -> спуск 0.8 с -> стоит 1 с.
-    bad — вторая попытка: {"elbow": ...}, {"bend": ...}, {"shoulder": ...}, {"knee": ...}, {"hold": секунды}."""
-    frames = [handstand_skeleton(0)] * int(fps)
-    move = (1 - np.cos(np.linspace(0, np.pi, int(0.8 * fps)))) / 2
-    for i in range(attempts):
-        extra = dict(bad) if (bad and i == 1) else {}
-        secs = extra.pop("hold", hold)
-        frames += [handstand_skeleton(178 * k, knee=176 - 70 * np.sin(np.pi * k)) for k in move]
-        frames += [handstand_skeleton(178, **extra)] * int(secs * fps)
-        frames += [handstand_skeleton(178 * (1 - k), knee=176 - 70 * np.sin(np.pi * k)) for k in move]
-        frames += [handstand_skeleton(0)] * int(fps)
+def dips_skeleton(elbow: float, facing: int = 1) -> np.ndarray:
+    """Человек на брусьях сбоку: кисти на брусьях (не двигаются), предплечье вертикально,
+    плечо — под углом elbow к предплечью. При elbow < 90 плечо уходит ниже локтя."""
+    pts = np.zeros((33, 4))
+    pts[:, 3] = 0.95
+    wrist = np.array([300.0, 400.0])
+    el = wrist - [0, 70]
+    t = np.radians(elbow)
+    sh = el + 70 * np.array([-np.sin(t) * facing, np.cos(t)])  # 180 — плечо над локтем, 90 — на уровне локтя
+    hip = sh + 150 * np.array([-np.sin(np.radians(15)) * facing, np.cos(np.radians(15))])  # корпус чуть вперёд
+    knee = hip + [0, 90]
+    ankle = knee + [-60 * facing, 40]  # голени согнуты назад
+    return put(pts, {"SHOULDER": sh, "ELBOW": el, "WRIST": wrist, "HIP": hip, "KNEE": knee, "ANKLE": ankle,
+                     "HEEL": ankle, "FOOT": ankle + [5 * facing, 5]})
+
+
+def bench_skeleton(elbow: float, hip_rise: float = 0.0, facing: int = 1) -> np.ndarray:
+    """Человек лёжа на скамье сбоку: плечо на месте, кисти над плечом, hip_rise — таз выше плеча (в длинах корпуса)."""
+    pts = np.zeros((33, 4))
+    pts[:, 3] = 0.95
+    half = np.radians(elbow) / 2
+    sh = np.array([300.0, 300.0])
+    wrist = sh - [0, 2 * 70 * np.sin(half)]
+    el = (sh + wrist) / 2 - [70 * np.cos(half) * facing, 0]  # локоть уходит в сторону ног
+    hip = sh + [-150 * facing, -150 * hip_rise]
+    knee = hip + [-70 * facing, -40]
+    ankle = knee + [-10 * facing, 110]
+    return put(pts, {"SHOULDER": sh, "ELBOW": el, "WRIST": wrist, "HIP": hip, "KNEE": knee, "ANKLE": ankle,
+                     "HEEL": ankle, "FOOT": ankle + [5 * facing, 5]})
+
+
+def press_session(make, reps: int = 3, bad: dict | None = None, fps: float = 30.0) -> np.ndarray:
+    """Наверху 1 с, потом reps повторений по 2 с. bad — второе повторение: {"elbow": угол внизу,
+    "lock": угол наверху перед повторением, остальное — в make (например hip_rise)}."""
+    bad = bad or {}
+    frames = [make(168)] * int(fps)
+    for i in range(reps):
+        extra = bad if i == 1 else {}
+        lock = extra.get("lock", 168)
+        kw = {k: v for k, v in extra.items() if k not in ("elbow", "lock")}
+        frames += [make(lock)] * int(fps)
+        k = (1 - np.cos(np.linspace(0, 2 * np.pi, int(2 * fps)))) / 2
+        base = np.where(np.arange(len(k)) < len(k) // 2, lock, 168)
+        for b, x in zip(base, k):
+            frames.append(make(b - (b - extra.get("elbow", 85)) * x, **{n: v * x for n, v in kw.items()}))
+    frames += [make(168)] * int(fps)
     return np.array(frames)
 
 
-def handstand_video(lm: np.ndarray):
-    return analyze_exercise(HANDSTAND, exercise_features(HANDSTAND, P.PoseSequence(lm, 30.0)), 30.0)
+def run_video(spec, lm: np.ndarray):
+    return analyze_exercise(spec, exercise_features(spec, P.PoseSequence(lm, 30.0)), 30.0)
 
 
-def test_handstand_values():
-    v = handstand_values(handstand_skeleton(180, bend=0), "L", 0)
-    assert v["stand_angle"] == pytest.approx(0, abs=2)  # вверх ногами (колено чуть согнуто — линия до лодыжки слегка наклонена)
-    assert v["elbow_angle"] == pytest.approx(176, abs=0.5)
-    assert v["shoulder_angle"] == pytest.approx(172, abs=0.5)
-    assert v["knee_angle"] == pytest.approx(176, abs=0.5)
-    assert handstand_values(handstand_skeleton(0, bend=0), "L", 0)["stand_angle"] == pytest.approx(180, abs=2)
-    assert handstand_values(handstand_skeleton(180, bend=30), "L", 0)["body_bend"] > 20
-
-
-@pytest.mark.parametrize("bad, code", [(None, None), ({"elbow": 135}, "bent_arms"), ({"bend": 35}, "banana"),
-                                       ({"shoulder": 130}, "closed_shoulders"), ({"knee": 130}, "bent_knees"),
-                                       ({"hold": 1.5}, "short_hold")])
-def test_handstand_video_on_skeleton(bad, code):
-    """Согнутая при махе нога НЕ считается ошибкой: оцениваем только саму стойку."""
-    a = handstand_video(handstand_session(3, bad))
-    assert [r.errors for r in a.reps] == [[], [code] if code else [], []]
-    assert a.reps[0].values["hold_seconds:max"] == pytest.approx(4.0, abs=0.6)
-
-
-def test_handstand_live_same_as_video():
-    lm = handstand_session(3, {"bend": 35})
-    expected = [r.errors for r in handstand_video(lm).reps]
-    live = ExerciseLiveSession(HANDSTAND)
-    for i in range(0, len(lm), 2):
+def run_live(spec, lm: np.ndarray, step: int = 1):
+    live = ExerciseLiveSession(spec)
+    for i in range(0, len(lm), step):
         live.push(i / 30.0, lm[i])
-    assert [r.errors for r in live.agent.reps] == expected
-    assert [f.code for f in live.feedback if f.code != "rep"] == ["banana"]  # подсказка прозвучала во время стойки
+    return live.agent.reps
 
 
-@pytest.mark.parametrize("error", list(HANDSTAND_DEMO))
-def test_handstand_demo_and_server(error):
-    r = client.get("/api/demo", params={"exercise": "handstand", "errors": error, "lang": "kk"})
+def test_dips_values():
+    for facing in (1, -1):
+        v = dips_values(dips_skeleton(90, facing), "L", 0)
+        assert v["elbow_angle"] == pytest.approx(90, abs=0.5)
+        assert v["shoulder_drop"] == pytest.approx(0, abs=0.02)  # 90° — плечо на уровне локтя
+        assert dips_values(dips_skeleton(60, facing), "L", 0)["shoulder_drop"] > 0.4
+        assert on_bars(dips_skeleton(170, facing), "L")
+    assert not on_bars(pushup_skeleton(165), "L") and not on_bars(bench_skeleton(165), "L")
+
+
+@pytest.mark.parametrize("bad, code", [(None, None), ({"elbow": 125}, "shallow"), ({"elbow": 55}, "too_deep"),
+                                       ({"lock": 145}, "no_lockout")])
+def test_dips_video_on_skeleton(bad, code):
+    a = run_video(DIPS, press_session(dips_skeleton, 3, bad))
+    assert [r.errors for r in a.reps] == [[], [code] if code else [], []]
+
+
+def test_dips_live_same_as_video():
+    lm = press_session(dips_skeleton, 3, {"elbow": 55})
+    expected = [r.errors for r in run_video(DIPS, lm).reps]
+    assert [r.errors for r in run_live(DIPS, lm)] == expected
+    assert [r.errors for r in run_live(DIPS, lm, step=3)] == expected  # 10 кадров/с
+
+
+def test_dips_ignores_arm_bending_while_standing():
+    """Стоя у брусьев руки тоже сгибаются, но двигаются кисти, а не тело — это не повторение (body_moves)."""
+    k = (1 - np.cos(np.linspace(0, 2 * np.pi, 66))) / 2
+    standing = np.array([arms_down(170)] * 30 + [arms_down(170 - 120 * x) for x in k] * 3 + [arms_down(170)] * 30)
+    assert on_bars(arms_down(90), "L")  # поза похожа (кисти ниже плеч, корпус вертикально)...
+    assert len(run_video(DIPS, standing).reps) == 0 and len(run_live(DIPS, standing)) == 0  # ...но это не брусья
+    assert len(run_video(DIPS, np.concatenate([standing, press_session(dips_skeleton, 3)])).reps) == 3
+    assert body_moves({"sh_y:min": 1.0, "sh_y:max": 2.0, "wr_y:min": 5.0, "wr_y:max": 5.1})
+    assert not body_moves({"sh_y:min": 1.0, "sh_y:max": 1.05, "wr_y:min": 4.0, "wr_y:max": 5.0})
+
+
+def test_bench_values():
+    for facing in (1, -1):
+        v = bench_values(bench_skeleton(90, facing=facing), "L", 0)
+        assert v["elbow_angle"] == pytest.approx(90, abs=0.5)
+        assert v["hip_rise"] == pytest.approx(0, abs=0.02)
+        assert bench_values(bench_skeleton(165, 0.4, facing), "L", 0)["hip_rise"] == pytest.approx(0.4, abs=0.05)
+        assert on_bench(bench_skeleton(165, facing=facing), "L")
+    assert not on_bench(pushup_skeleton(165), "L")  # упор лёжа: кисти ниже плеч
+    assert not on_bench(arms_down(90), "L")  # стоя: корпус вертикален
+
+
+@pytest.mark.parametrize("bad, code", [(None, None), ({"elbow": 125}, "no_chest"), ({"hip_rise": 0.4}, "butt_up"),
+                                       ({"lock": 145}, "no_lockout")])
+def test_bench_video_on_skeleton(bad, code):
+    a = run_video(BENCH, press_session(bench_skeleton, 3, bad))
+    assert [r.errors for r in a.reps] == [[], [code] if code else [], []]
+
+
+def test_bench_live_same_as_video_and_ignores_pushups():
+    lm = press_session(bench_skeleton, 3, {"hip_rise": 0.4})
+    expected = [r.errors for r in run_video(BENCH, lm).reps]
+    assert [r.errors for r in run_live(BENCH, lm)] == expected
+    assert len(run_live(BENCH, pushup_session(3))) == 0  # отжимания в режиме жима не считаются
+
+
+@pytest.mark.parametrize("key, error", [("dips", e) for e in DIPS_DEMO] + [("bench", e) for e in BENCH_DEMO])
+def test_dips_bench_demo_and_server(key, error):
+    r = client.get("/api/demo", params={"exercise": key, "errors": error, "lang": "kk"})
     assert r.status_code == 200
     data = r.json()
     assert [[e["key"] for e in rep["errors"]] for rep in data["reps"]] == [[], [error], []]
-    assert data["phase_names"]["ru"][2] == "СТОЙКА"
-    assert data["feedback"][-1]["message"]["ru"].startswith("Попытка 3")
-    assert data["reps"][0]["metrics"][0]["unit"] == "s"
+    assert data["phase_names"]["ru"][0] == "ВВЕРХУ"
+
+
+def test_info_lists_five_exercises():
+    info = client.get("/api/info").json()["exercises"]
+    assert set(info) == {"deadlift", "pushup", "pullup", "dips", "bench"}  # присед — отдельный модуль (agent.py)
+    assert set(info["bench"]["errors"]) == set(BENCH_DEMO) and set(info["dips"]["errors"]) == set(DIPS_DEMO)

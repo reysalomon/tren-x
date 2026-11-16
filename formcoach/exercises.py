@@ -81,6 +81,9 @@ class ExerciseSpec:
     hold: bool = False  # упражнение на удержание: ошибки и время считаем только в фазе НИЗ (стойка)
     from_floor: bool = False  # повторение может начинаться снизу (штанга на полу): низ -> верх -> низ
     pose_ok: Callable | None = None  # (точки, сторона) -> bool: поза вообще похожа на это упражнение? Нет — кадр пропускаем
+    # (min/max признаков за повторение) -> bool: было ли это настоящим повторением. None — не проверяем
+    rep_ok: Callable | None = None
+    extra: tuple[str, ...] = ()  # признаки, которые агент копит только для rep_ok (не ошибки и не метрики)
     top_range: tuple[float, float] = (140.0, 180.0)  # пределы ползунков HMM "угол вверху" / "угол внизу"
     bottom_range: tuple[float, float] = (50.0, 130.0)
 
@@ -413,121 +416,213 @@ PULLUP = ExerciseSpec(
     },
 )
 
-# ---------------- стойка на руках (удержание) ----------------
+# ---------------- брусья ----------------
 
 
-def handstand_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
-    """Признаки стойки на руках на одном кадре (камера сбоку).
+def dips_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
+    """Признаки отжиманий на брусьях на одном кадре (камера сбоку).
 
-    stand_angle    — угол тела к вертикали "вниз": 180 — стоит на ногах, 0 — ровно вверх ногами. Главный угол.
-                     Считается по линии плечо -> лодыжка (лодыжку не видно — плечо -> колено).
-    body_bend      — насколько тело не прямое: 180 - угол плечо-таз-колено ("банан" или согнутый таз).
-                     Берём колено, а не лодыжку, чтобы согнутые колени не считались "бананом".
-    elbow_angle    — угол в локте: в стойке руки прямые, ~175.
-    shoulder_angle — угол локоть-плечо-таз: в правильной стойке плечи открыты, ~170-180.
-    knee_angle     — угол колена: ноги должны быть прямые.
+    elbow_angle   — угол в локте: ~165+ наверху на прямых руках, ~90 внизу. Это главный угол.
+    shoulder_drop — насколько плечо опустилось НИЖЕ локтя, в длинах плеча (<0 — плечо выше локтя).
+                    Слишком глубоко (плечо сильно ниже локтя) — большая нагрузка на плечевой сустав.
+    sh_y, wr_y    — высота плеча и кисти в длинах плеча: на брусьях кисти стоят на месте, а двигается тело.
+                    Если наоборот (двигаются кисти) — человек просто сгибает руки стоя, это не повторение.
     """
     s = SIDES[side]
     xy = pts[:, :2]
-    foot = s["ankle"] if pts[s["ankle"], 3] >= MIN_VISIBILITY else s["knee"]
-    body = xy[foot] - xy[s["sh"]]
-    # угол между "плечо -> ноги" и направлением вниз (ось y в картинке направлена вниз)
-    down_angle = float(np.degrees(np.arccos(np.clip(body[1] / max(np.linalg.norm(body), 1e-6), -1, 1))))
-    knee_ok = pts[s["ankle"], 3] >= MIN_VISIBILITY
+    upper = max(float(np.linalg.norm(xy[s["sh"]] - xy[s["el"]])), 1e-6)
     return {
-        "stand_angle": 180.0 - down_angle,
-        "body_bend": 180.0 - float(joint_angle(xy[s["sh"]], xy[s["hip"]], xy[s["knee"]])),
         "elbow_angle": float(joint_angle(xy[s["sh"]], xy[s["el"]], xy[s["wr"]])),
-        "shoulder_angle": float(joint_angle(xy[s["el"]], xy[s["sh"]], xy[s["hip"]])),
-        "knee_angle": float(joint_angle(xy[s["hip"]], xy[s["knee"]], xy[s["ankle"]])) if knee_ok else np.nan,
+        "shoulder_drop": float((xy[s["sh"], 1] - xy[s["el"], 1]) / upper),
+        "sh_y": float(xy[s["sh"], 1] / upper),
+        "wr_y": float(xy[s["wr"], 1] / upper),
     }
 
 
-HANDSTAND = ExerciseSpec(
-    key="handstand",
-    main="stand_angle",
-    top=175.0,
-    bottom=8.0,
-    speed=150.0,  # выход в стойку и спуск быстрые: ~1 с на 170 градусов
-    min_dip=90.0,  # тело должно хотя бы лечь горизонтально — иначе это не попытка
+MAX_DIPS_TILT = 50.0  # на брусьях корпус ближе к вертикали; лёжа (отжимания, жим) — почти горизонтально
+
+
+def on_bars(pts: np.ndarray, side: str) -> bool:
+    """Поза похожа на брусья: кисти ниже плеч (упор на руки), корпус скорее вертикальный, чем лёжа."""
+    s = SIDES[side]
+    y = pts[:, 1]
+    hands_low = max(y[P.L_SHOULDER], y[P.R_SHOULDER]) < min(y[P.L_WRIST], y[P.R_WRIST])
+    return bool(hands_low and lean_from_vertical(pts[s["sh"], :2], pts[s["hip"], :2]) < MAX_DIPS_TILT)
+
+
+def body_moves(agg: dict) -> bool:
+    """За повторение двигалось тело, а кисти стояли на брусьях: размах кисти меньше половины размаха плеча.
+    Стоя у брусьев человек тоже может сгибать руки — тогда двигаются кисти, а плечи на месте."""
+    sh = agg.get("sh_y:max", np.nan) - agg.get("sh_y:min", np.nan)
+    wr = agg.get("wr_y:max", np.nan) - agg.get("wr_y:min", np.nan)
+    return bool(sh >= 0.3 and wr <= 0.5 * sh)
+
+
+DIPS = ExerciseSpec(
+    key="dips",
+    main="elbow_angle",
+    top=165.0,
+    bottom=90.0,
+    speed=100.0,
+    min_dip=35.0,  # неглубокое повторение (локоть до ~130°) тоже считаем — с ошибкой "неглубоко"
     checks=(
-        Check("bent_arms", "elbow_angle", "min", "<", "min_elbow_angle", live=True),
-        Check("banana", "body_bend", "max", ">", "max_body_bend", live=True),
-        Check("closed_shoulders", "shoulder_angle", "min", "<", "min_shoulder_angle", live=True),
-        Check("bent_knees", "knee_angle", "min", "<", "min_knee_angle", live=True),
-        Check("short_hold", "hold_seconds", "max", "<", "min_hold_seconds"),
+        Check("shallow", "elbow_angle", "min", ">", "max_bottom_elbow"),
+        Check("too_deep", "shoulder_drop", "max", ">", "max_shoulder_drop", live=True),
+        Check("no_lockout", "main_start", "max", "<", "min_lock_elbow"),
     ),
     fields=(
-        Field("min_hold_seconds", 3.0, 1.0, 30.0, 0.5, " s"),
-        Field("min_elbow_angle", 155.0, 130.0, 180.0, 1.0, "°"),
-        Field("max_body_bend", 20.0, 5.0, 45.0, 1.0, "°"),
-        Field("min_shoulder_angle", 150.0, 120.0, 180.0, 1.0, "°"),
-        Field("min_knee_angle", 155.0, 120.0, 180.0, 1.0, "°"),
+        Field("max_bottom_elbow", 100.0, 70.0, 130.0, 1.0, "°"),
+        Field("max_shoulder_drop", 0.35, 0.0, 1.0, 0.05),
+        Field("min_lock_elbow", 150.0, 120.0, 175.0, 1.0, "°"),
+        Field("min_rep_seconds", 1.0, 0.3, 3.0, 0.1, " s"),
     ),
-    values=handstand_values,
-    facing_vote=lambda pts, side: 0.0,  # направление взгляда не нужно
-    required=("sh", "hip", "knee"),
-    metrics=(("hold_seconds", "max", "s"), ("body_bend", "max", "°"), ("elbow_angle", "min", "°"),
-             ("shoulder_angle", "min", "°"), ("knee_angle", "min", "°")),
-    hold=True,
-    bottom_range=(0.0, 40.0),
+    values=dips_values,
+    facing_vote=no_facing,
+    required=("sh", "el", "wr", "hip"),
+    pose_ok=on_bars,
+    rep_ok=body_moves,
+    extra=("sh_y", "wr_y"),
+    metrics=(("elbow_angle", "min", "°"), ("shoulder_drop", "max", ""), ("main_start", "max", "°")),
     text={
         "ru": {
-            "name": "Стойка на руках",
-            "phases": ["НА НОГАХ", "ВЫХОД", "СТОЙКА", "СПУСК"],
-            "rep_ok": "Попытка {n}: отлично!",
-            "rep_bad": "Попытка {n}: {text}",
+            "name": "Брусья",
+            "phases": ["ВВЕРХУ", "ОПУСКАНИЕ", "ВНИЗУ", "ПОДЪЁМ"],
             "error": {
-                "bent_arms": "Руки согнуты — выпрями локти и толкай пол",
-                "banana": "Тело не прямое — сожми пресс и ягодицы, убери прогиб",
-                "closed_shoulders": "Плечи закрыты — тянись плечами к ушам",
-                "bent_knees": "Колени согнуты — выпрями ноги и тяни носки",
-                "short_hold": "Слишком короткое удержание — держи стойку дольше",
+                "shallow": "Неглубоко — опускайся, пока локти не согнутся до 90°",
+                "too_deep": "Слишком глубоко — плечи сильно ниже локтей, это вредно для плечевых суставов",
+                "no_lockout": "Руки не выпрямились наверху — выжимай до прямых локтей",
+                "fast": "Слишком быстро — опускайся подконтрольно",
             },
-            "short": {"bent_arms": "согнутые руки", "banana": "банан", "closed_shoulders": "закрытые плечи",
-                      "bent_knees": "согнутые колени", "short_hold": "короткое удержание"},
-            "live": {"bent_arms": "Выпрями руки", "banana": "Убери прогиб", "closed_shoulders": "Открой плечи",
-                     "bent_knees": "Выпрями ноги"},
-            "metric": {"hold_seconds": "Удержание", "body_bend": "Изгиб тела", "elbow_angle": "Локоть",
-                       "shoulder_angle": "Плечо", "knee_angle": "Колено"},
+            "short": {"shallow": "неглубоко", "too_deep": "слишком глубоко", "no_lockout": "не выпрямил", "fast": "быстро"},
+            "live": {"too_deep": "Не опускайся так низко"},
+            "metric": {"elbow_angle": "Локоть", "shoulder_drop": "Плечо ниже локтя", "main_start": "Наверху"},
             "fields": {
-                "min_hold_seconds": ("Мин. время удержания", "Короче — попытка с ошибкой «короткое удержание»."),
-                "min_elbow_angle": ("Угол локтя, мин.", "Меньше — руки согнуты."),
-                "max_body_bend": ("Изгиб тела, макс.", "Насколько линия плечо–таз–колено может быть не прямой."),
-                "min_shoulder_angle": ("Угол в плече, мин.", "Угол локоть–плечо–таз: меньше — плечи закрыты."),
-                "min_knee_angle": ("Угол колена, мин.", "Меньше — ноги согнуты."),
+                "max_bottom_elbow": ("Угол локтя внизу, макс.", "Больше — неглубокое повторение. 90° — локоть под прямым углом."),
+                "max_shoulder_drop": ("Плечо ниже локтя, макс.", "В длинах плеча: 0 — плечо на уровне локтя."),
+                "min_lock_elbow": ("Угол локтя наверху, мин.", "Меньше — руки не выпрямились, полуповторение."),
+                "min_rep_seconds": ("Мин. время повторения", "Быстрее — «падение» вниз без контроля."),
             },
         },
         "kk": {
-            "name": "Қолмен тұру",
-            "phases": ["АЯҚТА", "ШЫҒУ", "ТІРЕК", "ТҮСУ"],
-            "rep_ok": "{n}-әрекет: керемет!",
-            "rep_bad": "{n}-әрекет: {text}",
+            "name": "Брусья",
+            "phases": ["ЖОҒАРЫДА", "ТҮСУ", "ТӨМЕНДЕ", "КӨТЕРІЛУ"],
             "error": {
-                "bent_arms": "Қол бүгілген — шынтақты түзе, еденді итер",
-                "banana": "Дене түзу емес — іш пен бөксені қыс, майыспа",
-                "closed_shoulders": "Иық жабық — иықты құлаққа қарай соз",
-                "bent_knees": "Тізе бүгілген — аяқты түзе, саусақты соз",
-                "short_hold": "Тым қысқа ұстадың — тұруды ұзағырақ ұста",
+                "shallow": "Таяз — шынтақ 90°-қа бүгілгенше түс",
+                "too_deep": "Тым терең — иық шынтақтан әлдеқайда төмен, бұл иық буынына зиян",
+                "no_lockout": "Жоғарыда қол түзелмеді — шынтақ түзелгенше көтеріл",
+                "fast": "Тым жылдам — бақылап, баяу түс",
             },
-            "short": {"bent_arms": "бүгілген қол", "banana": "банан", "closed_shoulders": "жабық иық",
-                      "bent_knees": "бүгілген тізе", "short_hold": "қысқа ұстау"},
-            "live": {"bent_arms": "Қолды түзе", "banana": "Майыспа", "closed_shoulders": "Иықты аш",
-                     "bent_knees": "Аяқты түзе"},
-            "metric": {"hold_seconds": "Ұстау", "body_bend": "Дене иілуі", "elbow_angle": "Шынтақ",
-                       "shoulder_angle": "Иық", "knee_angle": "Тізе"},
+            "short": {"shallow": "таяз", "too_deep": "тым терең", "no_lockout": "түзелмеді", "fast": "жылдам"},
+            "live": {"too_deep": "Тым төмен түспе"},
+            "metric": {"elbow_angle": "Шынтақ", "shoulder_drop": "Иық шынтақтан төмен", "main_start": "Жоғарыда"},
             "fields": {
-                "min_hold_seconds": ("Ұстаудың ең аз уақыты", "Қысқа болса — «қысқа ұстау» қатесі."),
-                "min_elbow_angle": ("Шынтақ бұрышы, ең аз", "Аз болса — қол бүгілген."),
-                "max_body_bend": ("Дене иілуі, ең көп", "Иық–жамбас–тізе сызығы қаншалықты қисық бола алады."),
-                "min_shoulder_angle": ("Иық бұрышы, ең аз", "Шынтақ–иық–жамбас бұрышы: аз болса — иық жабық."),
-                "min_knee_angle": ("Тізе бұрышы, ең аз", "Аз болса — аяқ бүгілген."),
+                "max_bottom_elbow": ("Төменде шынтақ бұрышы, ең көп", "Көп болса — таяз қайталау. 90° — шынтақ тік бұрышпен."),
+                "max_shoulder_drop": ("Иық шынтақтан төмен, ең көп", "Иық ұзындығымен: 0 — иық шынтақ деңгейінде."),
+                "min_lock_elbow": ("Жоғарыда шынтақ бұрышы, ең аз", "Аз болса — қол түзелмеді, жарты қайталау."),
+                "min_rep_seconds": ("Қайталаудың ең аз уақыты", "Жылдамырақ — бақылаусыз төмен «құлайды»."),
             },
         },
     },
 )
 
-EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP, "pullup": PULLUP, "handstand": HANDSTAND}
+
+# ---------------- жим лёжа ----------------
+
+
+def bench_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
+    """Признаки жима лёжа на одном кадре (камера сбоку, на уровне скамьи).
+
+    elbow_angle — угол в локте: ~160+ на прямых руках наверху, ~80 когда гриф у груди. Это главный угол.
+    hip_rise    — насколько таз ВЫШЕ плеча, в длинах корпуса: таз оторвался от скамьи (лёжа ровно — около 0).
+    """
+    s = SIDES[side]
+    xy = pts[:, :2]
+    torso = max(float(np.linalg.norm(xy[s["sh"]] - xy[s["hip"]])), 1e-6)
+    return {
+        "elbow_angle": float(joint_angle(xy[s["sh"]], xy[s["el"]], xy[s["wr"]])),
+        "hip_rise": float((xy[s["sh"], 1] - xy[s["hip"], 1]) / torso),
+    }
+
+
+MAX_BENCH_TILT = 40.0  # лёжа на скамье линия плечо-таз почти горизонтальна
+
+
+def on_bench(pts: np.ndarray, side: str) -> bool:
+    """Человек лежит, руки над грудью: корпус почти горизонтален и кисти выше плеч.
+    Стоя (корпус вертикален) или в упоре лёжа (кисти ниже плеч) — не жим."""
+    s = SIDES[side]
+    y = pts[:, 1]
+    hands_up = (y[P.L_WRIST] + y[P.R_WRIST]) / 2 < (y[P.L_SHOULDER] + y[P.R_SHOULDER]) / 2
+    dx, dy = pts[s["hip"], :2] - pts[s["sh"], :2]
+    return bool(hands_up and np.degrees(np.arctan2(abs(dy), abs(dx))) < MAX_BENCH_TILT)
+
+
+BENCH = ExerciseSpec(
+    key="bench",
+    main="elbow_angle",
+    top=160.0,
+    bottom=85.0,
+    speed=100.0,
+    min_dip=35.0,
+    checks=(
+        Check("no_chest", "elbow_angle", "min", ">", "max_bottom_elbow"),
+        Check("butt_up", "hip_rise", "max", ">", "max_hip_rise", live=True),
+        Check("no_lockout", "main_start", "max", "<", "min_lock_elbow"),
+    ),
+    fields=(
+        Field("max_bottom_elbow", 100.0, 70.0, 130.0, 1.0, "°"),
+        Field("max_hip_rise", 0.2, 0.05, 0.6, 0.05),
+        Field("min_lock_elbow", 150.0, 120.0, 175.0, 1.0, "°"),
+        Field("min_rep_seconds", 1.0, 0.3, 3.0, 0.1, " s"),
+    ),
+    values=bench_values,
+    facing_vote=no_facing,
+    required=("sh", "el", "wr", "hip"),
+    pose_ok=on_bench,
+    metrics=(("elbow_angle", "min", "°"), ("hip_rise", "max", ""), ("main_start", "max", "°")),
+    text={
+        "ru": {
+            "name": "Жим лёжа",
+            "phases": ["ВВЕРХУ", "ОПУСКАНИЕ", "У ГРУДИ", "ЖИМ"],
+            "error": {
+                "no_chest": "Неполная амплитуда — опускай гриф до груди",
+                "butt_up": "Таз оторвался от скамьи — держи ягодицы на скамье",
+                "no_lockout": "Руки не выпрямились наверху — выжимай до прямых локтей",
+                "fast": "Слишком быстро — не бросай гриф на грудь, опускай подконтрольно",
+            },
+            "short": {"no_chest": "не до груди", "butt_up": "таз оторван", "no_lockout": "не выпрямил", "fast": "быстро"},
+            "live": {"butt_up": "Таз на скамью"},
+            "metric": {"elbow_angle": "Локоть", "hip_rise": "Таз выше плеч", "main_start": "Наверху"},
+            "fields": {
+                "max_bottom_elbow": ("Угол локтя внизу, макс.", "Больше — гриф не дошёл до груди."),
+                "max_hip_rise": ("Таз выше плеч, макс.", "В длинах корпуса: лёжа ровно — около 0."),
+                "min_lock_elbow": ("Угол локтя наверху, мин.", "Меньше — руки не выпрямились, полуповторение."),
+                "min_rep_seconds": ("Мин. время повторения", "Быстрее — гриф «бросают» и отбивают от груди."),
+            },
+        },
+        "kk": {
+            "name": "Жатып итеру",
+            "phases": ["ЖОҒАРЫДА", "ТҮСІРУ", "КЕУДЕДЕ", "ИТЕРУ"],
+            "error": {
+                "no_chest": "Толық емес — грифті кеудеге дейін түсір",
+                "butt_up": "Жамбас орындықтан көтерілді — бөксені орындықта ұста",
+                "no_lockout": "Жоғарыда қол түзелмеді — шынтақ түзелгенше итер",
+                "fast": "Тым жылдам — грифті кеудеге тастама, бақылап түсір",
+            },
+            "short": {"no_chest": "кеудеге жетпеді", "butt_up": "жамбас көтерілді", "no_lockout": "түзелмеді", "fast": "жылдам"},
+            "live": {"butt_up": "Жамбасты орындыққа"},
+            "metric": {"elbow_angle": "Шынтақ", "hip_rise": "Жамбас иықтан жоғары", "main_start": "Жоғарыда"},
+            "fields": {
+                "max_bottom_elbow": ("Төменде шынтақ бұрышы, ең көп", "Көп болса — гриф кеудеге жетпеді."),
+                "max_hip_rise": ("Жамбас иықтан жоғары, ең көп", "Дене ұзындығымен: түзу жатқанда — шамамен 0."),
+                "min_lock_elbow": ("Жоғарыда шынтақ бұрышы, ең аз", "Аз болса — қол түзелмеді, жарты қайталау."),
+                "min_rep_seconds": ("Қайталаудың ең аз уақыты", "Жылдамырақ — грифті «тастап», кеудеден серпеді."),
+            },
+        },
+    },
+)
+
+EXERCISES: dict[str, ExerciseSpec] = {"deadlift": DEADLIFT, "pushup": PUSHUP, "pullup": PULLUP, "dips": DIPS, "bench": BENCH}
 
 
 def get_exercise(key: str) -> ExerciseSpec:
@@ -583,7 +678,7 @@ class ExerciseCoachAgent:
         self._standing = -np.inf  # самый большой главный угол стоя перед повторением
         self._warned: set[str] = set()
         self._last_end = -10**9  # кадр конца последнего повторения
-        names = {spec.main} | {c.feature for c in spec.checks} | {m[0] for m in spec.metrics}
+        names = {spec.main} | {c.feature for c in spec.checks} | {m[0] for m in spec.metrics} | set(spec.extra)
         # main_start и hold_seconds — не признаки кадра, их считает сам агент
         self._tracked = sorted(names - {"main_start", "hold_seconds"})
 
@@ -676,7 +771,8 @@ class ExerciseCoachAgent:
             # в живом режиме кадры без человека до агента не доходят, поэтому делим на длину повторения в кадрах
             # (только для упражнений с проверкой позы pose_ok: у остальных плохая видимость сустава — не повод не считать)
             seen_enough = self.spec.pose_ok is None or self._seen / (frame - self._start + 1) >= self.MIN_SEEN
-            if long_enough and deep_enough and seen_enough:  # иначе это дрожание или человека почти не было видно
+            real = self.spec.rep_ok is None or self.spec.rep_ok(self._agg)  # например, на брусьях двигалось тело, а не кисти
+            if long_enough and deep_enough and seen_enough and real:  # иначе дрожание, человека не было видно или не то движение
                 actions.append(self._finish(frame))
                 self._last_end = frame
             if phase == TOP:
@@ -979,43 +1075,85 @@ def pullup_synthetic(reps: list[PullupRep], fps: float = 30.0, pause_sec: float 
     return feats
 
 
+def _press_elbow(reps: list, fps: float, n_pause: int, top: float = 168.0) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Главный угол для брусьев и жима: наверху угол r.lock (прямые руки) -> вниз до r.elbow -> наверх до lock
+    следующего повторения. Возвращает угол и для каждого повторения его k (0 наверху, 1 внизу)."""
+    # подход начинается на прямых руках (на брусья запрыгивают / гриф снимают с прямыми руками)
+    elbow, ks = [np.full(n_pause, top)], [np.zeros(n_pause)]
+    for i, r in enumerate(reps):
+        nxt = reps[i + 1].lock if i + 1 < len(reps) else top
+        k = (1 - np.cos(np.linspace(0, 2 * np.pi, max(int(r.seconds * fps), 3)))) / 2
+        base = np.where(np.arange(len(k)) < len(k) // 2, r.lock, nxt)  # откуда опускается / куда поднимается
+        elbow += [np.full(n_pause, r.lock), base - (base - r.elbow) * k]
+        ks += [np.zeros(n_pause), k]
+    elbow.append(np.full(n_pause, top))
+    ks.append(np.zeros(n_pause))
+    return np.concatenate(elbow), ks
+
+
 @dataclass
-class HandstandRep:
-    hold: float = 6.0  # сколько секунд держит стойку
-    elbow: float = 176.0
-    bend: float = 6.0  # изгиб тела в стойке
-    shoulder: float = 172.0
-    knee: float = 176.0
+class DipsRep:
+    elbow: float = 85.0  # угол локтя внизу
+    drop: float = 0.1  # плечо ниже локтя внизу, в длинах плеча
+    lock: float = 168.0  # угол локтя наверху ПЕРЕД этим повторением
+    seconds: float = 2.2
 
 
-HANDSTAND_DEMO = {
-    "bent_arms": HandstandRep(elbow=135.0),
-    "banana": HandstandRep(bend=32.0),
-    "closed_shoulders": HandstandRep(shoulder=135.0),
-    "bent_knees": HandstandRep(knee=130.0),
-    "short_hold": HandstandRep(hold=1.2),
+DIPS_DEMO = {
+    "shallow": DipsRep(elbow=125.0, drop=-0.5),
+    "too_deep": DipsRep(elbow=65.0, drop=0.8),
+    "no_lockout": DipsRep(lock=140.0),
+    "fast": DipsRep(seconds=0.7),
 }
 
 
-def handstand_synthetic(reps: list[HandstandRep], fps: float = 30.0, pause_sec: float = 1.5, noise: float = 1.5,
-                        seed: int = 0) -> dict[str, np.ndarray]:
-    """Синтетическая стойка на руках: стоит -> мах в стойку (0.8 с) -> держит r.hold с -> спуск (0.8 с)."""
+def dips_synthetic(reps: list[DipsRep], fps: float = 30.0, pause_sec: float = 1.0, noise: float = 1.5,
+                   seed: int = 0) -> dict[str, np.ndarray]:
+    """Синтетические брусья: признаки, заданные формулой (для демо и тестов). Кисти на месте, тело ходит вверх-вниз."""
     rng = np.random.default_rng(seed)
-    n_pause, n_move = int(pause_sec * fps), int(0.8 * fps)
-    stand = {"stand_angle": 175.0, "body_bend": 3.0, "elbow_angle": 175.0, "shoulder_angle": 20.0, "knee_angle": 175.0}
-    parts = {k: [np.full(n_pause, v)] for k, v in stand.items()}
-    for r in reps:
-        up = (1 - np.cos(np.linspace(0, np.pi, n_move))) / 2  # 0 -> 1 плавно
-        hold = {"stand_angle": 6.0, "body_bend": r.bend, "elbow_angle": r.elbow, "shoulder_angle": r.shoulder,
-                "knee_angle": r.knee}
-        # во время маха нога согнута, тело сложено — это нормально, агент это не оценивает
-        swing = {"body_bend": 60 * np.sin(np.pi * up), "knee_angle": -60 * np.sin(np.pi * up)}
-        for k in stand:
-            a, b = stand[k], hold[k]
-            parts[k] += [a + (b - a) * up + swing.get(k, 0), np.full(int(r.hold * fps), b),
-                         b + (a - b) * up + swing.get(k, 0), np.full(n_pause, a)]
-    feats = {k: smooth(np.concatenate(c) + rng.normal(0, noise, sum(map(len, c))), 5) for k, c in parts.items()}
-    feats["main_vel"] = np.gradient(feats["stand_angle"]) * fps
+    n_pause = int(pause_sec * fps)
+    elbow, ks = _press_elbow(reps, fps, n_pause)
+    k = np.concatenate(ks)
+    drop = np.concatenate([np.full(len(c), -0.95) + (r.drop + 0.95) * c
+                           for c, r in zip(ks, [DipsRep()] + [x for r in reps for x in (r, r)] + [DipsRep()])])
+    feats = {
+        "elbow_angle": smooth(elbow + rng.normal(0, noise, len(elbow)), 5),
+        "shoulder_drop": smooth(drop + rng.normal(0, 0.02, len(drop)), 5),
+        "sh_y": smooth(3.0 + 1.0 * k + rng.normal(0, 0.02, len(k)), 5),
+        "wr_y": smooth(5.0 + rng.normal(0, 0.02, len(k)), 5),
+    }
+    feats["main_vel"] = np.gradient(feats["elbow_angle"]) * fps
+    return feats
+
+
+@dataclass
+class BenchRep:
+    elbow: float = 80.0  # угол локтя, когда гриф у груди
+    hip: float = 0.0  # насколько таз поднимается выше плеч внизу, в длинах корпуса
+    lock: float = 168.0  # угол локтя наверху ПЕРЕД этим повторением
+    seconds: float = 2.2
+
+
+BENCH_DEMO = {
+    "no_chest": BenchRep(elbow=125.0),
+    "butt_up": BenchRep(hip=0.4),
+    "no_lockout": BenchRep(lock=140.0),
+    "fast": BenchRep(seconds=0.7),
+}
+
+
+def bench_synthetic(reps: list[BenchRep], fps: float = 30.0, pause_sec: float = 1.0, noise: float = 1.5,
+                    seed: int = 0) -> dict[str, np.ndarray]:
+    """Синтетический жим лёжа: признаки, заданные формулой (для демо и тестов)."""
+    rng = np.random.default_rng(seed)
+    n_pause = int(pause_sec * fps)
+    elbow, ks = _press_elbow(reps, fps, n_pause)
+    hip = np.concatenate([r.hip * c for c, r in zip(ks, [BenchRep()] + [x for r in reps for x in (r, r)] + [BenchRep()])])
+    feats = {
+        "elbow_angle": smooth(elbow + rng.normal(0, noise, len(elbow)), 5),
+        "hip_rise": smooth(hip + rng.normal(0, 0.02, len(hip)), 5),
+    }
+    feats["main_vel"] = np.gradient(feats["elbow_angle"]) * fps
     return feats
 
 
@@ -1024,7 +1162,8 @@ DEMOS = {
     "deadlift": (DEADLIFT_DEMO, DeadliftRep, deadlift_synthetic),
     "pushup": (PUSHUP_DEMO, PushupRep, pushup_synthetic),
     "pullup": (PULLUP_DEMO, PullupRep, pullup_synthetic),
-    "handstand": (HANDSTAND_DEMO, HandstandRep, handstand_synthetic),
+    "dips": (DIPS_DEMO, DipsRep, dips_synthetic),
+    "bench": (BENCH_DEMO, BenchRep, bench_synthetic),
 }
 DEMO_ERRORS = {key: list(d[0]) for key, d in DEMOS.items()}
 

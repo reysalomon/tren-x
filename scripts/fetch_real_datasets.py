@@ -26,8 +26,8 @@ EXT = Path(__file__).resolve().parent.parent / "data" / "external"
 MENDELEY = "https://data.mendeley.com/public-api/datasets/w5prmmxyt9"
 HF_API = "https://huggingface.co/api/datasets/lmms-lab-eval/repcounta-lance/tree/main?recursive=1"
 HF_FILE = "https://huggingface.co/datasets/lmms-lab-eval/repcounta-lance/resolve/main/"
-CLASSES = {"squat", "squant", "push_up", "pushups", "pull_up", "pullups"}  # "squant" — опечатка в самом датасете
-TRAIN_CLASSES = {"pull_up", "pullups"}
+CLASSES = {"squat", "squant", "push_up", "pushups", "pull_up", "pullups", "bench_pressing", "benchpressing"}  # "squant" — опечатка в самом датасете
+TRAIN_CLASSES = {"pull_up", "pullups", "bench_pressing", "benchpressing"}
 
 
 def open_url(url: str):

@@ -11,7 +11,7 @@ const FALLBACK_DEFAULTS = {
 
 let defaults = { ...FALLBACK_DEFAULTS };
 let info = null; // /api/info: значения по умолчанию, упражнения, метрики моделей
-const EXERCISES = ["squat", "deadlift", "pushup", "pullup", "handstand"];
+const EXERCISES = ["squat", "deadlift", "pushup", "pullup", "dips", "bench"];
 let exercise = loadExercise();
 let allSettings = loadSettings(); // настройки каждого упражнения отдельно: {squat: {...}, deadlift: {...}}
 let lastResult = null;

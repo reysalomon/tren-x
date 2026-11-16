@@ -3,7 +3,7 @@
 Запуск:  python scripts/eval_real.py            (сначала scripts/fetch_real_datasets.py — скачать видео)
 
 Датасеты:
-  RepCount-A (CVPR 2022, видео с YouTube)  — приседания, отжимания, подтягивания; известно число повторений.
+  RepCount-A (CVPR 2022, видео с YouTube)  — приседания, отжимания, подтягивания, жим лёжа; известно число повторений.
       Проверяем неделю 7: счёт повторений HMM + агента против простого порога.
   MyDeadlift (Mendeley Data, CC BY 4.0)    — 191 видео становой тяги сбоку, по одному повторению,
       метки: правильно / круглая спина / колени за носками.
@@ -38,7 +38,7 @@ MIN_DETECTED = 0.5  # если человек найден меньше чем �
 
 # названия классов RepCount (в датасете есть опечатки) -> наше упражнение
 REPCOUNT_CLASSES = {"squat": "squat", "squant": "squat", "push_up": "pushup", "pushups": "pushup",
-                    "pull_up": "pullup", "pullups": "pullup"}
+                    "pull_up": "pullup", "pullups": "pullup", "bench_pressing": "bench", "benchpressing": "bench"}
 
 
 def cached_pose(job: tuple[str, str]) -> str:
@@ -226,6 +226,10 @@ def main():
             report["repcount"]["pullup_new_videos"] = eval_repcount(held, ("pullup",))["pullup"]
             report["repcount"]["pullup_new_videos_no_rule"] = eval_repcount(held, ("pullup",), pose_rule=False)["pullup"]
         report["repcount"]["pullup_no_rule"] = eval_repcount(dev, ("pullup",), pose_rule=False)["pullup"]
+        # Жим лёжа: все 125 видео (validation + test + train) — пороги жима на них не подбирались.
+        bench = eval_repcount(rc, ("bench",))
+        if bench:
+            report["repcount"]["bench"] = bench["bench"]
         print("\nRepCount-A — счёт повторений (точно / ±1 / средняя ошибка):")
         for key, r in report["repcount"].items():
             h, t = r["hmm"], r["threshold"]
