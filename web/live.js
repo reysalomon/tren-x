@@ -5,6 +5,7 @@
 // Использует из app.js: $, t, tx, lang, current, render, go, toast.
 
 const MP_VERSION = "0.10.14";
+const MAX_INFLIGHT = 12; // сколько кадров может ждать ответа сервера одновременно
 const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 // Голосовые фразы: web/audio/<язык>/<имя>.mp3 (записаны в ElevenLabs). Нет файла — говорит синтез речи браузера.
@@ -223,8 +224,10 @@ function loop() {
   const res = live.landmarker.detectForVideo(v, now);
   const pts = res.landmarks?.[0];
   drawSkeleton(pts, v.videoWidth, v.videoHeight);
-  // если сервер не успевает отвечать (медленный интернет) — пропускаем кадр, а не копим очередь
-  if (live.ws?.readyState !== WebSocket.OPEN || live.inflight > 2 || live.finishing) return;
+  // если сервер не успевает отвечать (медленный интернет) — пропускаем кадр, а не копим очередь.
+  // Лимит 12, а не 3: через туннель ответ идёт ~0.3 с, и с лимитом 3 доходило ~4 кадра/с —
+  // нижняя точка быстрого отжимания иногда терялась, и локоть "внизу" получался 136° (живой тест 2026-11-16)
+  if (live.ws?.readyState !== WebSocket.OPEN || live.inflight > MAX_INFLIGHT || live.finishing) return;
   // x, y — в пикселях кадра (как в Python для видео), z и visibility — как есть
   const lm = pts ? pts.flatMap((p) => [p.x * v.videoWidth, p.y * v.videoHeight, p.z, p.visibility ?? 0]) : null;
   live.ws.send(JSON.stringify({ type: "frame", t: (now - live.t0) / 1000, lm }));

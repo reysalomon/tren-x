@@ -231,6 +231,19 @@ def pushup_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]
     }
 
 
+MAX_PLANK_TILT = 45.0  # линия плечо-стопа в упоре лёжа почти горизонтальна (~20–35°); стоя или в наклоне — 60–90°
+
+
+def in_plank(pts: np.ndarray, side: str) -> bool:
+    """Человек в упоре лёжа: линия плечо -> лодыжка (или колено) наклонена к горизонту меньше чем на 45°.
+    Стоя, при ходьбе или в наклоне локоть тоже сгибается — без этой проверки такие кадры считались отжиманиями
+    (нашли на живом тесте с телефона 2026-11-16)."""
+    s = SIDES[side]
+    foot = s["ankle"] if pts[s["ankle"], 3] >= MIN_VISIBILITY else s["knee"]
+    dx, dy = pts[foot, :2] - pts[s["sh"], :2]
+    return bool(np.degrees(np.arctan2(abs(dy), abs(dx))) < MAX_PLANK_TILT)
+
+
 def no_facing(pts: np.ndarray, side: str) -> float:
     """Для отжиманий направление взгляда не нужно."""
     return 0.0
@@ -256,6 +269,7 @@ PUSHUP = ExerciseSpec(
     ),
     values=pushup_values,
     facing_vote=no_facing,
+    pose_ok=in_plank,
     required=("sh", "el", "wr", "hip"),
     metrics=(("elbow_angle", "min", "°"), ("sag", "max", "°"), ("pike", "max", "°")),
     text={

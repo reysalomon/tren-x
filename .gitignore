@@ -5,3 +5,4 @@ data/videos/
 *.pyc
 data/external/
 data/processed/real_poses/
+data/live_debug/

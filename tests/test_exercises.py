@@ -164,7 +164,7 @@ def test_websocket_deadlift():
 
 
 # ---------------- отжимания ----------------
-from formcoach.exercises import PUSHUP, PUSHUP_DEMO, pushup_values  # noqa: E402
+from formcoach.exercises import PUSHUP, PUSHUP_DEMO, in_plank, pushup_values  # noqa: E402
 
 
 def pushup_skeleton(elbow: float, hip_shift: float = 0.0, facing: int = 1) -> np.ndarray:
@@ -226,6 +226,20 @@ def test_pushup_live_same_as_video(fps):
     for i in range(0, len(lm), 30 // fps):
         live.push(i / 30.0, lm[i])
     assert [r.errors for r in live.agent.reps] == expected
+
+
+def test_pushup_ignores_arm_bending_while_standing():
+    """Живой тест с телефона: стоя/при ходьбе локоть сгибается — это не отжимание (проверка in_plank)."""
+    assert in_plank(pushup_skeleton(165), "L") and in_plank(pushup_skeleton(90), "L")
+    assert not in_plank(arms_down(90), "L")
+    k = (1 - np.cos(np.linspace(0, 2 * np.pi, 66))) / 2
+    standing = np.array([arms_down(170)] * 30 + [arms_down(170 - 120 * x) for x in k] * 3 + [arms_down(170)] * 30)
+    lm = np.concatenate([standing, pushup_session(3)])
+    assert len(pushup_video(lm).reps) == 3  # три настоящих отжимания, сгибания стоя не посчитаны
+    live = ExerciseLiveSession(PUSHUP)
+    for i in range(len(lm)):
+        live.push(i / 30.0, lm[i])
+    assert len(live.agent.reps) == 3
 
 
 @pytest.mark.parametrize("error", list(PUSHUP_DEMO))

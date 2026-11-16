@@ -206,14 +206,14 @@
       "videos": 34,
       "skipped": 0,
       "hmm": {
-        "exact": 0.38235294117647056,
-        "off_by_one": 0.5588235294117647,
-        "mae": 3.6470588235294117
+        "exact": 0.4117647058823529,
+        "off_by_one": 0.5882352941176471,
+        "mae": 3.9705882352941178
       },
       "threshold": {
-        "exact": 0.14705882352941177,
-        "off_by_one": 0.5588235294117647,
-        "mae": 4.411764705882353
+        "exact": 0.20588235294117646,
+        "off_by_one": 0.5294117647058824,
+        "mae": 4.176470588235294
       },
       "per_video": [
         {
@@ -226,13 +226,13 @@
           "video": "stu1_47.mp4",
           "true": 6,
           "hmm": 6,
-          "threshold": 7
+          "threshold": 6
         },
         {
           "video": "stu10_44.mp4",
           "true": 40,
-          "hmm": 19,
-          "threshold": 55
+          "hmm": 12,
+          "threshold": 52
         },
         {
           "video": "stu10_47.mp4",
@@ -243,8 +243,8 @@
         {
           "video": "stu9_55.mp4",
           "true": 14,
-          "hmm": 14,
-          "threshold": 12
+          "hmm": 7,
+          "threshold": 10
         },
         {
           "video": "stu5_45.mp4",
@@ -261,8 +261,8 @@
         {
           "video": "val901.mp4",
           "true": 7,
-          "hmm": 2,
-          "threshold": 1
+          "hmm": 0,
+          "threshold": 0
         },
         {
           "video": "stu3_50.mp4",
@@ -280,7 +280,7 @@
           "video": "stu10_42.mp4",
           "true": 11,
           "hmm": 9,
-          "threshold": 10
+          "threshold": 9
         },
         {
           "video": "test1595.mp4",
@@ -291,8 +291,8 @@
         {
           "video": "stu8_43.mp4",
           "true": 25,
-          "hmm": 29,
-          "threshold": 27
+          "hmm": 25,
+          "threshold": 25
         },
         {
           "video": "stu4_40.mp4",
@@ -303,14 +303,14 @@
         {
           "video": "train2711.mp4",
           "true": 5,
-          "hmm": 4,
+          "hmm": 3,
           "threshold": 3
         },
         {
           "video": "stu4_45.mp4",
           "true": 16,
-          "hmm": 26,
-          "threshold": 24
+          "hmm": 16,
+          "threshold": 16
         },
         {
           "video": "train2716.mp4",
@@ -328,7 +328,7 @@
           "video": "stu8_42.mp4",
           "true": 6,
           "hmm": 6,
-          "threshold": 7
+          "threshold": 6
         },
         {
           "video": "train2737.mp4",
@@ -339,44 +339,44 @@
         {
           "video": "stu7_45.mp4",
           "true": 3,
-          "hmm": 3,
-          "threshold": 3
+          "hmm": 2,
+          "threshold": 2
         },
         {
           "video": "stu9_52.mp4",
           "true": 57,
-          "hmm": 32,
+          "hmm": 30,
           "threshold": 31
         },
         {
           "video": "stu9_48.mp4",
           "true": 27,
-          "hmm": 30,
+          "hmm": 28,
           "threshold": 30
         },
         {
           "video": "stu10_48.mp4",
           "true": 5,
-          "hmm": 6,
+          "hmm": 5,
           "threshold": 6
         },
         {
           "video": "stu5_47.mp4",
           "true": 30,
-          "hmm": 30,
-          "threshold": 27
+          "hmm": 26,
+          "threshold": 25
         },
         {
           "video": "stu4_46.mp4",
           "true": 45,
-          "hmm": 35,
-          "threshold": 7
+          "hmm": 34,
+          "threshold": 6
         },
         {
           "video": "stu8_45.mp4",
           "true": 11,
-          "hmm": 16,
-          "threshold": 19
+          "hmm": 11,
+          "threshold": 16
         },
         {
           "video": "stu9_47.mp4",
@@ -399,14 +399,14 @@
         {
           "video": "stu6_39.mp4",
           "true": 29,
-          "hmm": 37,
-          "threshold": 24
+          "hmm": 13,
+          "threshold": 25
         },
         {
           "video": "train2659.mp4",
           "true": 4,
-          "hmm": 4,
-          "threshold": 4
+          "hmm": 2,
+          "threshold": 2
         },
         {
           "video": "stu8_46.mp4",
@@ -417,8 +417,8 @@
         {
           "video": "stu4_47.mp4",
           "true": 37,
-          "hmm": 39,
-          "threshold": 38
+          "hmm": 37,
+          "threshold": 39
         }
       ]
     },

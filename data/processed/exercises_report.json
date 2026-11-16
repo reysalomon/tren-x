@@ -43,7 +43,7 @@
         "support": 125
       }
     },
-    "analysis_ms_per_session": 13.777571710020311
+    "analysis_ms_per_session": 21.462265944995806
   },
   "pushup": {
     "sessions": 200,
@@ -83,7 +83,7 @@
         "support": 145
       }
     },
-    "analysis_ms_per_session": 11.066433289988709
+    "analysis_ms_per_session": 17.74223494498642
   },
   "pullup": {
     "sessions": 200,
@@ -123,7 +123,7 @@
         "support": 163
       }
     },
-    "analysis_ms_per_session": 11.730119904987077
+    "analysis_ms_per_session": 18.258513279993167
   },
   "handstand": {
     "sessions": 200,
@@ -169,6 +169,6 @@
         "support": 125
       }
     },
-    "analysis_ms_per_session": 40.57062001500981
+    "analysis_ms_per_session": 63.66844506000007
   }
 }

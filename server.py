@@ -7,7 +7,9 @@
 
 import base64
 import json
+import os
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -478,6 +480,7 @@ async def live(ws: WebSocket):
                     ex = msg.get("exercise") or "squat"
                     exercise = check_exercise(ex if isinstance(ex, str) else "?", lang)
                     hmm_params, rules = settings_for(exercise, json.dumps(msg.get("settings") or {}), lang)
+                    _debug_record(session, exercise)  # прошлый подход без «Стоп» — тоже сохраняем
                     if exercise == "squat":
                         session = LiveSession(hmm_params, rules)
                     else:
@@ -499,6 +502,7 @@ async def live(ws: WebSocket):
                         await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["short"]})
                     else:
                         await ws.send_json({"type": "result", "data": to_json(a, hmm_params, None, np.array(session.landmarks), exercise)})
+                    _debug_record(session, exercise)
                     session = None
                 else:
                     raise ValueError("unknown message")
@@ -508,6 +512,21 @@ async def live(ws: WebSocket):
                 await ws.send_json({"type": "error", "detail": LIVE_ERRORS[lang]["protocol"]})
     except WebSocketDisconnect:
         pass  # телефон закрыл страницу — ничего не храним
+    finally:
+        _debug_record(session, exercise)
+
+
+def _debug_record(session, exercise: str):
+    """Только для отладки: если задана переменная TRENX_RECORD=папка, сохраняем точки тела подхода
+    (без видео), чтобы потом воспроизвести его на компьютере. По умолчанию ничего не пишется."""
+    folder = os.environ.get("TRENX_RECORD")
+    if not folder or session is None or len(session.times) < 2:
+        return
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    exercise = getattr(getattr(session, "spec", None), "key", "squat")  # упражнение самого подхода
+    name = f"{time.strftime('%Y%m%d-%H%M%S')}_{exercise}.npz"
+    np.savez_compressed(Path(folder) / name, times=np.array(session.times), landmarks=np.array(session.landmarks),
+                        phases=np.array(session.phases), reps=len(session.agent.reps))
 
 
 # Service worker должен отдаваться из корня сайта, иначе браузер не даст ему управлять всеми страницами
