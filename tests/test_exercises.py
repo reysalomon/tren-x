@@ -509,3 +509,16 @@ def test_dips_keeps_frame_with_hidden_hip_and_far_wrist():
     assert _visible(pts, DIPS, "L")
     pts[P.L_WRIST, 3] = 0.2  # а вот без видимой кисти рабочей стороны кадр не годится
     assert not _visible(pts, DIPS, "L")
+
+
+def test_dips_body_moves_in_pixels_not_per_frame_upper():
+    """Видео 2026-11-18: внизу плечо видно укороченным. Раньше высоты делились на длину плеча
+    этого кадра, кисть "прыгала", и 16 из 20 повторений отбрасывались. Теперь высоты в пикселях."""
+    from formcoach.exercises import dips_values
+    top, bottom = dips_skeleton(170), dips_skeleton(80)
+    bottom[:, 1] += 60  # всё тело опустилось на 60 px...
+    bottom[[P.L_WRIST, P.R_WRIST], 1] = top[[P.L_WRIST, P.R_WRIST], 1]  # ...а кисти стоят на брусьях
+    bottom[P.L_ELBOW, 0] -= 40  # плечо в кадре укорочено иначе, чем вверху
+    vals = [dips_values(p, "L", 0) for p in (top, bottom)]
+    agg = {f"{k}:{f.__name__}": f(v[k] for v in vals) for k in ("sh_y", "wr_y", "upper") for f in (min, max)}
+    assert body_moves(agg)

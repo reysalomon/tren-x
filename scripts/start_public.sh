@@ -9,7 +9,8 @@ if curl -s -o /dev/null http://localhost:8000/api/info; then
   echo "Сервер уже работает."
 else
   echo "Запускаю сервер..."
-  .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 >"$LOG" 2>&1 &
+  # точки тела каждого подхода (без видео) сохраняются в data/live_debug — чтобы разбирать ошибки счёта
+  TRENX_RECORD=data/live_debug .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 >"$LOG" 2>&1 &
   SERVER=$!
   trap 'kill $SERVER 2>/dev/null' EXIT
   for _ in $(seq 60); do

@@ -425,8 +425,11 @@ def dips_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
     elbow_angle   — угол в локте: ~165+ наверху на прямых руках, ~90 внизу. Это главный угол.
     shoulder_drop — насколько плечо опустилось НИЖЕ локтя, в длинах плеча (<0 — плечо выше локтя).
                     Слишком глубоко (плечо сильно ниже локтя) — большая нагрузка на плечевой сустав.
-    sh_y, wr_y    — высота плеча и кисти в длинах плеча: на брусьях кисти стоят на месте, а двигается тело.
+    sh_y, wr_y    — высота плеча и кисти в пикселях: на брусьях кисти стоят на месте, а двигается тело.
                     Если наоборот (двигаются кисти) — человек просто сгибает руки стоя, это не повторение.
+                    Именно в пикселях, а не в длинах плеча этого кадра: внизу плечо видно укороченным, и после
+                    деления казалось, что кисть "прыгает" — 16 из 20 настоящих повторений отбрасывались (видео 2026-11-18).
+    upper         — длина плеча в пикселях: масштаб, чтобы понять, достаточно ли опустилось тело.
     """
     s = SIDES[side]
     xy = pts[:, :2]
@@ -434,8 +437,9 @@ def dips_values(pts: np.ndarray, side: str, facing: float) -> dict[str, float]:
     return {
         "elbow_angle": float(joint_angle(xy[s["sh"]], xy[s["el"]], xy[s["wr"]])),
         "shoulder_drop": float((xy[s["sh"], 1] - xy[s["el"], 1]) / upper),
-        "sh_y": float(xy[s["sh"], 1] / upper),
-        "wr_y": float(xy[s["wr"], 1] / upper),
+        "sh_y": float(xy[s["sh"], 1]),
+        "wr_y": float(xy[s["wr"], 1]),
+        "upper": upper,
     }
 
 
@@ -453,11 +457,13 @@ def on_bars(pts: np.ndarray, side: str) -> bool:
 
 
 def body_moves(agg: dict) -> bool:
-    """За повторение двигалось тело, а кисти стояли на брусьях: размах кисти меньше половины размаха плеча.
+    """За повторение двигалось тело, а кисти стояли на брусьях: размах кисти меньше половины размаха плеча,
+    а плечо опустилось хотя бы на 0.3 длины плеча (самой короткой за повторение — так проверка мягче).
     Стоя у брусьев человек тоже может сгибать руки — тогда двигаются кисти, а плечи на месте."""
     sh = agg.get("sh_y:max", np.nan) - agg.get("sh_y:min", np.nan)
     wr = agg.get("wr_y:max", np.nan) - agg.get("wr_y:min", np.nan)
-    return bool(sh >= 0.3 and wr <= 0.5 * sh)
+    upper = agg.get("upper:min", 1.0)
+    return bool(sh >= 0.3 * upper and wr <= 0.5 * sh)
 
 
 DIPS = ExerciseSpec(
@@ -483,7 +489,7 @@ DIPS = ExerciseSpec(
     required=("sh", "el", "wr"),  # бедро на брусьях часто закрыто — для наклона хватает его координат
     pose_ok=on_bars,
     rep_ok=body_moves,
-    extra=("sh_y", "wr_y"),
+    extra=("sh_y", "wr_y", "upper"),
     metrics=(("elbow_angle", "min", "°"), ("shoulder_drop", "max", ""), ("main_start", "max", "°")),
     text={
         "ru": {
@@ -1123,6 +1129,7 @@ def dips_synthetic(reps: list[DipsRep], fps: float = 30.0, pause_sec: float = 1.
         "shoulder_drop": smooth(drop + rng.normal(0, 0.02, len(drop)), 5),
         "sh_y": smooth(3.0 + 1.0 * k + rng.normal(0, 0.02, len(k)), 5),
         "wr_y": smooth(5.0 + rng.normal(0, 0.02, len(k)), 5),
+        "upper": np.ones(len(k)),  # высоты выше уже в длинах плеча
     }
     feats["main_vel"] = np.gradient(feats["elbow_angle"]) * fps
     return feats
