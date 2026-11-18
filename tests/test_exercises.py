@@ -495,3 +495,17 @@ def test_info_lists_five_exercises():
     info = client.get("/api/info").json()["exercises"]
     assert set(info) == {"deadlift", "pushup", "pullup", "dips", "bench"}  # присед — отдельный модуль (agent.py)
     assert set(info["bench"]["errors"]) == set(BENCH_DEMO) and set(info["dips"]["errors"]) == set(DIPS_DEMO)
+
+
+def test_dips_keeps_frame_with_hidden_hip_and_far_wrist():
+    """Живой тест 2026-11-18: на брусьях бедро закрыто брусом, дальнюю руку закрывает тело —
+    кадры не должны выкидываться (раньше скелет "терялся")."""
+    from formcoach.exercises import _visible
+    pts = dips_skeleton(100)
+    pts[[P.L_HIP, P.R_HIP], 3] = 0.2  # бедро почти не видно
+    pts[P.R_WRIST, 1] = 0.0  # дальняя (правая) кисть угадана где-то над головой
+    pts[P.R_WRIST, 3] = 0.1
+    assert on_bars(pts, "L")
+    assert _visible(pts, DIPS, "L")
+    pts[P.L_WRIST, 3] = 0.2  # а вот без видимой кисти рабочей стороны кадр не годится
+    assert not _visible(pts, DIPS, "L")

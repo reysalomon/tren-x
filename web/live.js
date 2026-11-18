@@ -7,7 +7,13 @@
 const MP_VERSION = "0.10.14";
 const MAX_INFLIGHT = 12; // сколько кадров может ждать ответа сервера одновременно
 const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
-const POSE_MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const POSE_URL = (m) => `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${m}/float16/1/pose_landmarker_${m}.task`;
+// Брусья: тело висит, ноги согнуты, часть тела закрывают брусья — lite там терял человека.
+// Для них берём full (точнее, чуть медленнее); остальным хватает lite.
+const POSE_MODEL_FOR = { dips: "full" };
+// Пороги уверенности ниже стандартных 0.5: на трудной позе лучше неточная точка, чем пропавший скелет
+// (сервер всё равно отбрасывает кадры, где нужные точки плохо видны).
+const POSE_CONF = 0.3;
 // Голосовые фразы: web/audio/<язык>/<имя>.mp3 (записаны в ElevenLabs). Нет файла — говорит синтез речи браузера.
 const CLIPS = ["start", "good", "shallow", "lean", "danger", "heels", "fast", "no_person", "finish", "bar_far", "lean_back", "squat_it", "stiff_legs", "sag", "pike", "chin_low", "no_hang", "swing", "too_deep", "no_lockout", "no_chest", "butt_up"];
 // Линии скелета на экране (номера точек MediaPipe)
@@ -164,19 +170,26 @@ function stopCamera() {
   live.stream = null;
 }
 async function loadLandmarker() {
-  if (live.landmarker) return live.landmarker;
+  const model = POSE_MODEL_FOR[exercise] ?? "lite";
+  if (live.landmarker && live.landmarkerModel === model) return live.landmarker;
+  live.landmarker?.close();
+  live.landmarker = null;
   const { FilesetResolver, PoseLandmarker } = await import(`${MP_URL}/vision_bundle.mjs`);
   const fileset = await FilesetResolver.forVisionTasks(`${MP_URL}/wasm`);
   const make = (delegate) => PoseLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: POSE_MODEL, delegate },
+    baseOptions: { modelAssetPath: POSE_URL(model), delegate },
     runningMode: "VIDEO",
     numPoses: 1,
+    minPoseDetectionConfidence: POSE_CONF,
+    minPosePresenceConfidence: POSE_CONF,
+    minTrackingConfidence: POSE_CONF,
   });
   try {
     live.landmarker = await make("GPU");
   } catch {
     live.landmarker = await make("CPU"); // не на всех телефонах есть WebGL2
   }
+  live.landmarkerModel = model;
   return live.landmarker;
 }
 

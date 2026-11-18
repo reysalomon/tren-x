@@ -443,10 +443,12 @@ MAX_DIPS_TILT = 50.0  # на брусьях корпус ближе к верт�
 
 
 def on_bars(pts: np.ndarray, side: str) -> bool:
-    """Поза похожа на брусья: кисти ниже плеч (упор на руки), корпус скорее вертикальный, чем лёжа."""
+    """Поза похожа на брусья: кисть ниже плеча (упор на руки), корпус скорее вертикальный, чем лёжа.
+    Смотрим только видимую сторону: дальнюю руку на брусьях закрывает тело, и MediaPipe угадывает её
+    неточно — из-за неё кадры выкидывались, и точки "терялись" (живой тест 2026-11-18).
+    Бедро часто закрыто брусом, поэтому его видимость не требуем: координаты MediaPipe всё равно даёт."""
     s = SIDES[side]
-    y = pts[:, 1]
-    hands_low = max(y[P.L_SHOULDER], y[P.R_SHOULDER]) < min(y[P.L_WRIST], y[P.R_WRIST])
+    hands_low = pts[s["sh"], 1] < pts[s["wr"], 1]
     return bool(hands_low and lean_from_vertical(pts[s["sh"], :2], pts[s["hip"], :2]) < MAX_DIPS_TILT)
 
 
@@ -478,7 +480,7 @@ DIPS = ExerciseSpec(
     ),
     values=dips_values,
     facing_vote=no_facing,
-    required=("sh", "el", "wr", "hip"),
+    required=("sh", "el", "wr"),  # бедро на брусьях часто закрыто — для наклона хватает его координат
     pose_ok=on_bars,
     rep_ok=body_moves,
     extra=("sh_y", "wr_y"),
